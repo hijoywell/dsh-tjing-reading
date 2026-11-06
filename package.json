@@ -1,0 +1,26 @@
+{
+  "name": "dsh-tjing-reading",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "竹居 (Zhu Ju) — an EPUB/PDF reader for the DSH left sidebar, with a WeChat Read style reading surface and a book-grounded AI assistant. The package name dsh-tjing-reading only identifies the code.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["index.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  }
+}
