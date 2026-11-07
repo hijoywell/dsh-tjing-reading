@@ -539,7 +539,7 @@ window.__ModuleLoader__.load({
     const EPUB_TOC_KEY = 'bookshelf.epubToc';
     // Bump this on every client change: it shows up in the panel header so a
     // stale bundle in the browser is obvious.
-    const BUILD = 'r20';
+    const BUILD = 'r21';
     // The reading position is mirrored in localStorage on every page turn. It is
     // synchronous, survives a module reload and does not depend on the Host
     // keeping this panel mounted — the IndexedDB row is the slower copy.
@@ -2121,7 +2121,7 @@ window.__ModuleLoader__.load({
 .bk-fontpick-refresh:hover{background:rgba(127,127,127,.16)}
 .bk-fontpick-status{font-size:11.5px;opacity:.62;padding:0 2px}
 .bk-fontlist{width:100%;max-height:190px;overflow-y:auto;border:1px solid var(--bk-barBorder);border-radius:8px;padding:3px;display:flex;flex-direction:column}
-.bk-fontrow{border:none;background:transparent;color:inherit;font-family:inherit;font-size:13px;line-height:1.5;text-align:left;padding:5px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-fontrow{flex:none;border:none;background:transparent;color:inherit;font-family:inherit;font-size:13px;line-height:1.5;text-align:left;padding:5px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bk-fontrow:hover{background:rgba(127,127,127,.16)}
 .bk-fontrow.bk-on{background:rgba(127,127,127,.2);color:var(--bk-accent,#2f6f4f);font-weight:600}
 .bk-fontpick-empty{font-size:12.5px;opacity:.6;padding:10px 4px;text-align:center}
@@ -2166,7 +2166,7 @@ window.__ModuleLoader__.load({
 .bk-ai-model-prov{font-size:11.5px;opacity:.6;overflow:hidden;text-overflow:ellipsis}
 .bk-ai-models{position:absolute;left:10px;right:10px;bottom:calc(100% + 2px);z-index:6;max-height:min(46dvh,340px);overflow-y:auto;overscroll-behavior:contain;padding:6px;border:1px solid var(--bk-barBorder);border-radius:12px;background:var(--bk-bar);box-shadow:0 14px 34px rgba(0,0,0,.22);display:flex;flex-direction:column;gap:2px;animation:bk-fade-in .16s ease}
 .bk-ai-models-note{padding:10px;font-size:13.5px;line-height:1.6;opacity:.65}
-.bk-ai-model-row{display:flex;align-items:baseline;gap:8px;width:100%;padding:7px 9px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.bk-ai-model-row{flex:none;display:flex;align-items:baseline;gap:8px;width:100%;padding:7px 9px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:14px;text-align:left;cursor:pointer}
 .bk-ai-model-row:hover{background:rgba(127,127,127,.12)}
 .bk-ai-model-row.bk-on{background:rgba(127,127,127,.16);font-weight:600}
 .bk-ai-model-row-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
