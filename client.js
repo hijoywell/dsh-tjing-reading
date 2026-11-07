@@ -31,6 +31,21 @@ window.__ModuleLoader__.load({
       'shelf.pdf': 'PDF 文档',
       'shelf.continue': '继续阅读',
       'shelf.remove': '从竹居移除',
+      'shelf.more': '更多操作',
+      'shelf.all': '全部',
+      'shelf.epub': 'EPUB',
+      'shelf.newGroup': '新建分组',
+      'shelf.groupName': '分组名',
+      'shelf.moveTo': '移动到分组',
+      'shelf.ungrouped': '不分组',
+      'shelf.renameGroup': '重命名',
+      'shelf.deleteGroup': '删除分组',
+      'shelf.groupEmpty': '这个分组还没有书',
+      'shelf.groupEmptyHint': '在书的「⋯」菜单里选择「移动到分组」',
+      'shelf.create': '创建',
+      'shelf.cancel': '取消',
+      'shelf.deleteGroupHint': '分组里的书会回到「全部」，不会被删除',
+      'shelf.filterEmpty': '这里还没有书',
       'reader.back': '返回竹居',
       'reader.loading': '正在载入文档…',
       'reader.zoomIn': '放大',
@@ -146,6 +161,21 @@ window.__ModuleLoader__.load({
       'shelf.pdf': 'PDF document',
       'shelf.continue': 'Continue reading',
       'shelf.remove': 'Remove from Zhu Ju',
+      'shelf.more': 'More actions',
+      'shelf.all': 'All',
+      'shelf.epub': 'EPUB',
+      'shelf.newGroup': 'New group',
+      'shelf.groupName': 'Group name',
+      'shelf.moveTo': 'Move to group',
+      'shelf.ungrouped': 'No group',
+      'shelf.renameGroup': 'Rename',
+      'shelf.deleteGroup': 'Delete group',
+      'shelf.groupEmpty': 'No books in this group yet',
+      'shelf.groupEmptyHint': 'Pick “Move to group” in a book’s ⋯ menu',
+      'shelf.create': 'Create',
+      'shelf.cancel': 'Cancel',
+      'shelf.deleteGroupHint': 'The books stay on the shelf — only the group goes away',
+      'shelf.filterEmpty': 'No books here',
       'reader.back': 'Back to Zhu Ju',
       'reader.loading': 'Loading the document…',
       'reader.zoomIn': 'Zoom in',
@@ -275,6 +305,8 @@ window.__ModuleLoader__.load({
     const ICON_BACK = ['M15 5l-7 7 7 7'];
     const ICON_PLUS = ['M12 5v14M5 12h14'];
     const ICON_MORE = ['M5 12h.01M12 12h.01M19 12h.01'];
+    const ICON_FOLDER = ['M3 7.5A2.5 2.5 0 0 1 5.5 5h3.2a2 2 0 0 1 1.6.8l1 1.3a2 2 0 0 0 1.6.8h5.6A2.5 2.5 0 0 1 21 10.4v6.1A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z'];
+    const ICON_CHECK = ['M4.5 12.5l5 5 10-11'];
     const ICON_TOC = ['M4 6h16M4 12h16M4 18h10'];
     const ICON_CLOSE = ['M6 6l12 12M18 6L6 18'];
     const ICON_TRASH = ['M4 7h16', 'M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2', 'M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13', 'M10 11v6M14 11v6'];
@@ -539,7 +571,7 @@ window.__ModuleLoader__.load({
     const EPUB_TOC_KEY = 'bookshelf.epubToc';
     // Bump this on every client change: it shows up in the panel header so a
     // stale bundle in the browser is obvious.
-    const BUILD = 'r21';
+    const BUILD = 'r22';
     // The reading position is mirrored in localStorage on every page turn. It is
     // synchronous, survives a module reload and does not depend on the Host
     // keeping this panel mounted — the IndexedDB row is the slower copy.
@@ -559,6 +591,51 @@ window.__ModuleLoader__.load({
           page: pos.page, offset: pos.offset, at: Date.now(),
         }));
       } catch { /* ignore */ }
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 分组 — the shelf's own shelves.
+     *
+     * A group is a name plus the books that point at it. Both live in
+     * localStorage rather than in the `books` store: a book row carries the
+     * whole file, and moving a book between groups must not rewrite megabytes.
+     * ------------------------------------------------------------------ */
+    const GROUPS_KEY = 'bookshelf.groups';
+    const BOOK_GROUP_KEY = 'bookshelf.bookGroup';
+
+    /** `[{ id, name }]`, oldest first. */
+    function loadGroups() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? '[]');
+        if (!Array.isArray(raw)) return [];
+        return raw
+          .filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string')
+          .map((item) => ({ id: item.id, name: item.name.slice(0, 40) }));
+      } catch {
+        return [];
+      }
+    }
+
+    function saveGroups(groups) {
+      try { localStorage.setItem(GROUPS_KEY, JSON.stringify(groups)); } catch { /* ignore */ }
+    }
+
+    /** `{ [bookId]: groupId }` — a book sits in one group, like a folder. */
+    function loadBookGroups() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(BOOK_GROUP_KEY) ?? '{}');
+        return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function saveBookGroups(map) {
+      try { localStorage.setItem(BOOK_GROUP_KEY, JSON.stringify(map)); } catch { /* ignore */ }
+    }
+
+    function newGroupId() {
+      return `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     }
     // Zoom steps relative to fit-width (100%), like a desktop previewer.
     const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -1885,6 +1962,22 @@ window.__ModuleLoader__.load({
 .bk-root{position:relative;height:100vh;height:100dvh;max-height:100%;display:flex;flex-direction:column;overflow:hidden;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:var(--dsh-font-family-text,system-ui,sans-serif)}
 .bk-root *{box-sizing:border-box}
 .bk-shelf-head{display:flex;align-items:center;gap:8px;padding:18px 22px 10px;flex:none}
+/* 分组 bar: the curated groups first, the automatic format chips last. It
+   scrolls sideways rather than wrapping, so the grid never jumps around. */
+.bk-filters{flex:none;display:flex;flex-direction:column;gap:8px;padding:0 22px 12px}
+.bk-filters-row{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.bk-filters-row::-webkit-scrollbar{display:none}
+.bk-chip{flex:none;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.3));border-radius:999px;background:transparent;color:inherit;font-family:inherit;font-size:12.5px;line-height:1.4;padding:4px 11px;cursor:pointer;white-space:nowrap;opacity:.78;transition:background .14s ease,opacity .14s ease,border-color .14s ease,color .14s ease}
+.bk-chip:hover{opacity:1;background:rgba(127,127,127,.12)}
+.bk-chip.bk-on{opacity:1;border-color:var(--dsw-alias-accent,#2f6f4f);color:var(--dsw-alias-accent,#2f6f4f);font-weight:600;background:rgba(47,111,79,.09)}
+.bk-chip-n{font-size:11px;opacity:.6;font-variant-numeric:tabular-nums}
+.bk-chip-add{padding:4px 9px}
+.bk-chip-act{font-size:12px;padding:3px 10px}
+.bk-chip-danger.bk-chip-danger:hover{background:rgba(192,57,43,.12);border-color:#c0392b;color:#c0392b;opacity:1}
+.bk-filters-spacer{flex:1;min-width:8px}
+.bk-groupedit{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bk-groupedit .bk-fontinput{flex:1;min-width:140px;font-size:12.5px;padding:5px 10px}
+.bk-groupedit-note{flex:1;min-width:140px;font-size:12px;opacity:.7;line-height:1.5}
 .bk-shelf-title{font-size:19px;font-weight:600;flex:1;letter-spacing:.5px}
 .bk-iconbtn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:none;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:inherit;cursor:pointer;padding:0}
 .bk-iconbtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -1914,6 +2007,13 @@ window.__ModuleLoader__.load({
 .bk-menu{position:absolute;top:36px;right:6px;z-index:30;min-width:132px;background:var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base));border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.28);padding:5px;display:flex;flex-direction:column}
 .bk-menu button{border:none;background:transparent;color:inherit;font-size:13px;text-align:left;padding:7px 10px;border-radius:6px;cursor:pointer;display:flex;gap:8px;align-items:center}
 .bk-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
+/* The group picker reuses the menu as a second pane: a back row on top, then
+   one row per group with the current one ticked. */
+.bk-menu-back{font-weight:600;opacity:.72;margin-bottom:2px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.18))!important;border-radius:6px 6px 0 0!important}
+.bk-menu-check{justify-content:space-between!important}
+.bk-menu-check.bk-on{color:var(--dsw-alias-accent,#2f6f4f);font-weight:600}
+.bk-menu-hint{margin-left:auto;font-size:11.5px;opacity:.55;max-width:76px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-menu-note{padding:7px 10px;font-size:12px;opacity:.55}
 .bk-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;margin:0 22px 24px;border:1.5px dashed var(--dsw-alias-border-l2,rgba(0,0,0,.15));border-radius:12px;color:var(--dsw-alias-label-secondary);text-align:center;padding:24px}
 .bk-empty .bk-empty-title{font-size:15px;color:var(--dsw-alias-label-primary)}
 .bk-empty .bk-empty-hint{font-size:13px}
@@ -2254,9 +2354,13 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------------------ *
      * Shelf (竹居)
      * ------------------------------------------------------------------ */
-    function CoverCard({ record, onOpen, onDelete }) {
+    function CoverCard({ record, onOpen, onDelete, groups, groupId, onAssign }) {
       const [menuOpen, setMenuOpen] = useState(false);
+      // 'root' = 继续阅读 / 移动到分组 / 移除; 'group' = the group picker.
+      const [menuPane, setMenuPane] = useState('root');
       const isPdf = record.kind === 'pdf';
+      const currentGroup = groupId ?? null;
+      const groupName = currentGroup ? (groups.find((g) => g.id === currentGroup)?.name ?? null) : null;
       const coverUrl = useMemo(
         () => (record.cover ? URL.createObjectURL(new Blob([record.cover.bytes], { type: record.cover.mime })) : null),
         [record.id],
@@ -2289,14 +2393,40 @@ window.__ModuleLoader__.load({
               ),
           ),
           e('button', {
-            className: 'bk-more', type: 'button', 'aria-label': t('shelf.remove'),
-            onClick: (ev) => { ev.stopPropagation(); setMenuOpen((v) => !v); },
+            className: 'bk-more', type: 'button', 'aria-label': t('shelf.more'),
+            onClick: (ev) => { ev.stopPropagation(); setMenuOpen((v) => !v); setMenuPane('root'); },
           }, e(Icon, { paths: ICON_MORE, size: 15, filled: true, strokeWidth: 3 })),
           menuOpen && e('div', { className: 'bk-menu' },
-            e('button', { type: 'button', onClick: () => { setMenuOpen(false); onOpen(record); } },
-              e(Icon, { paths: ICON_SHELF, size: 14 }), t('shelf.continue')),
-            e('button', { type: 'button', onClick: () => { setMenuOpen(false); onDelete(record); } },
-              e(Icon, { paths: ICON_TRASH, size: 14 }), t('shelf.remove')),
+            menuPane === 'group'
+              ? [
+                e('button', {
+                  key: 'back', type: 'button', className: 'bk-menu-back',
+                  onClick: () => setMenuPane('root'),
+                }, e(Icon, { paths: ICON_BACK, size: 13 }), t('shelf.moveTo')),
+                // 不分组 first: it is the way back out of a group.
+                e('button', {
+                  key: 'none', type: 'button',
+                  className: `bk-menu-check${!currentGroup ? ' bk-on' : ''}`,
+                  onClick: () => { onAssign(record, null); setMenuOpen(false); },
+                }, t('shelf.ungrouped'), !currentGroup && e(Icon, { paths: ICON_CHECK, size: 13 })),
+                ...groups.map((group) => e('button', {
+                  key: group.id, type: 'button',
+                  className: `bk-menu-check${currentGroup === group.id ? ' bk-on' : ''}`,
+                  onClick: () => { onAssign(record, group.id); setMenuOpen(false); },
+                }, group.name, currentGroup === group.id && e(Icon, { paths: ICON_CHECK, size: 13 }))),
+                groups.length === 0 && e('div', { key: 'empty', className: 'bk-menu-note' }, t('shelf.newGroup')),
+              ]
+              : [
+                e('button', { key: 'open', type: 'button', onClick: () => { setMenuOpen(false); onOpen(record); } },
+                  e(Icon, { paths: ICON_SHELF, size: 14 }), t('shelf.continue')),
+                e('button', {
+                  key: 'group', type: 'button',
+                  onClick: () => setMenuPane('group'),
+                }, e(Icon, { paths: ICON_FOLDER, size: 14 }), t('shelf.moveTo'),
+                  e('span', { className: 'bk-menu-hint' }, groupName ?? '')),
+                e('button', { key: 'del', type: 'button', onClick: () => { setMenuOpen(false); onDelete(record); } },
+                  e(Icon, { paths: ICON_TRASH, size: 14 }), t('shelf.remove')),
+              ],
           ),
         ),
         e('div', {
@@ -2310,11 +2440,136 @@ window.__ModuleLoader__.load({
     function Shelf({ books, onOpen, onDelete, onFiles }) {
       const inputRef = useRef(null);
       const [dragOver, setDragOver] = useState(false);
+      // 'all' | 'epub' | 'pdf' | '<groupId>' — the shelf remembers nothing, so
+      // every visit starts on 全部.
+      const [filter, setFilter] = useState('all');
+      const [groups, setGroups] = useState(loadGroups);
+      const [bookGroups, setBookGroups] = useState(loadBookGroups);
+      const [editing, setEditing] = useState(null); // { id?, name } — create or rename
+      const [confirmDelete, setConfirmDelete] = useState(null);
       const pickFiles = () => inputRef.current?.click();
       const acceptFiles = (fileList) => {
         const files = [...(fileList ?? [])].filter((f) => /\.(epub|pdf)$/i.test(f.name) || /epub|pdf/i.test(f.type));
         if (files.length > 0) onFiles(files);
       };
+
+      // A group that lost its last book still exists, but a filter pointing at a
+      // group that was just deleted must fall back to 全部.
+      useEffect(() => {
+        if (filter === 'all' || filter === 'epub' || filter === 'pdf') return;
+        if (!groups.some((g) => g.id === filter)) setFilter('all');
+      }, [groups, filter]);
+
+      const counts = useMemo(() => {
+        const out = { all: books.length, epub: 0, pdf: 0 };
+        for (const group of groups) out[group.id] = 0;
+        for (const record of books) {
+          const kind = record.kind === 'pdf' ? 'pdf' : 'epub';
+          out[kind] += 1;
+          const gid = bookGroups[record.id];
+          if (gid && out[gid] !== undefined) out[gid] += 1;
+        }
+        return out;
+      }, [books, groups, bookGroups]);
+
+      const shown = useMemo(() => {
+        if (filter === 'all') return books;
+        if (filter === 'epub') return books.filter((b) => b.kind !== 'pdf');
+        if (filter === 'pdf') return books.filter((b) => b.kind === 'pdf');
+        return books.filter((b) => bookGroups[b.id] === filter);
+      }, [books, bookGroups, filter]);
+
+      const assign = useCallback((record, groupId) => {
+        setBookGroups((prev) => {
+          const next = { ...prev };
+          if (groupId) next[record.id] = groupId;
+          else delete next[record.id];
+          saveBookGroups(next);
+          return next;
+        });
+      }, []);
+
+      const commitEditing = useCallback(() => {
+        const name = (editing?.name ?? '').trim();
+        setEditing(null);
+        if (!name) return;
+        setGroups((prev) => {
+          const next = editing?.id
+            ? prev.map((g) => (g.id === editing.id ? { ...g, name: name.slice(0, 40) } : g))
+            : [...prev, { id: newGroupId(), name: name.slice(0, 40) }];
+          saveGroups(next);
+          return next;
+        });
+      }, [editing]);
+
+      const removeGroup = useCallback((groupId) => {
+        setGroups((prev) => {
+          const next = prev.filter((g) => g.id !== groupId);
+          saveGroups(next);
+          return next;
+        });
+        setBookGroups((prev) => {
+          const next = {};
+          for (const [bookId, gid] of Object.entries(prev)) if (gid !== groupId) next[bookId] = gid;
+          saveBookGroups(next);
+          return next;
+        });
+        setConfirmDelete(null);
+      }, []);
+
+      const chip = (id, label, count) => e('button', {
+        key: id, type: 'button',
+        className: `bk-chip${filter === id ? ' bk-on' : ''}`,
+        onClick: () => setFilter(id),
+      }, label, e('span', { className: 'bk-chip-n' }, String(count)));
+
+      const activeGroup = groups.find((g) => g.id === filter);
+      const filterBar = books.length === 0 ? null : e('div', { className: 'bk-filters' },
+        e('div', { className: 'bk-filters-row' },
+          chip('all', t('shelf.all'), counts.all),
+          ...groups.map((group) => chip(group.id, group.name, counts[group.id] ?? 0)),
+          // 格式 chips come last: they are the automatic axis, not the curated one.
+          books.some((b) => b.kind !== 'pdf') && chip('epub', t('shelf.epub'), counts.epub),
+          books.some((b) => b.kind === 'pdf') && chip('pdf', 'PDF', counts.pdf),
+          e('button', {
+            className: 'bk-chip bk-chip-add', type: 'button', title: t('shelf.newGroup'),
+            'aria-label': t('shelf.newGroup'),
+            onClick: () => setEditing({ name: '' }),
+          }, e(Icon, { paths: ICON_PLUS, size: 14 })),
+          activeGroup && e('span', { className: 'bk-filters-spacer' }),
+          activeGroup && e('button', {
+            className: 'bk-chip bk-chip-act', type: 'button', title: t('shelf.renameGroup'),
+            onClick: () => setEditing({ id: activeGroup.id, name: activeGroup.name }),
+          }, t('shelf.renameGroup')),
+          activeGroup && e('button', {
+            className: 'bk-chip bk-chip-act bk-chip-danger', type: 'button', title: t('shelf.deleteGroup'),
+            onClick: () => setConfirmDelete(activeGroup),
+          }, t('shelf.deleteGroup')),
+        ),
+        editing && e('div', { className: 'bk-groupedit' },
+          e('input', {
+            className: 'bk-fontinput', type: 'text', value: editing.name, autoFocus: true,
+            placeholder: t('shelf.groupName'), maxLength: 40,
+            onChange: (ev) => setEditing({ ...editing, name: ev.target.value }),
+            onKeyDown: (ev) => {
+              if (ev.key === 'Enter') { ev.preventDefault(); commitEditing(); }
+              else if (ev.key === 'Escape') { ev.preventDefault(); setEditing(null); }
+            },
+          }),
+          e('button', { className: 'bk-chip bk-on', type: 'button', onClick: commitEditing }, t('shelf.create')),
+          e('button', { className: 'bk-chip', type: 'button', onClick: () => setEditing(null) }, t('shelf.cancel')),
+        ),
+        confirmDelete && e('div', { className: 'bk-groupedit' },
+          e('span', { className: 'bk-groupedit-note' },
+            `${confirmDelete.name} — ${t('shelf.deleteGroupHint')}`),
+          e('button', {
+            className: 'bk-chip bk-chip-danger', type: 'button',
+            onClick: () => removeGroup(confirmDelete.id),
+          }, t('shelf.deleteGroup')),
+          e('button', { className: 'bk-chip', type: 'button', onClick: () => setConfirmDelete(null) }, t('shelf.cancel')),
+        ),
+      );
+
       return e('div', {
         className: 'bk-root',
         onDragOver: (ev) => { ev.preventDefault(); setDragOver(true); },
@@ -2334,17 +2589,24 @@ window.__ModuleLoader__.load({
             onChange: (ev) => { acceptFiles(ev.target.files); ev.target.value = ''; },
           }),
         ),
+        filterBar,
         books.length === 0
           ? e('div', { className: 'bk-empty', style: dragOver ? { borderColor: '#2f6f4f' } : undefined },
             e('div', { className: 'bk-empty-title' }, t('shelf.empty.title')),
             e('div', { className: 'bk-empty-hint' }, t('shelf.empty.hint')),
             e('button', { className: 'bk-import-btn', type: 'button', onClick: pickFiles }, t('shelf.import')),
           )
-          : e('div', { className: 'bk-shelf-grid' },
-            ...books.map((record) => e(CoverCard, {
-              key: record.id, record, onOpen, onDelete,
-            })),
-          ),
+          : shown.length === 0
+            ? e('div', { className: 'bk-empty' },
+              e('div', { className: 'bk-empty-title' }, t('shelf.groupEmpty')),
+              e('div', { className: 'bk-empty-hint' }, t('shelf.groupEmptyHint')),
+            )
+            : e('div', { className: 'bk-shelf-grid' },
+              ...shown.map((record) => e(CoverCard, {
+                key: record.id, record, onOpen, onDelete,
+                groups, groupId: bookGroups[record.id] ?? null, onAssign: assign,
+              })),
+            ),
       );
     }
 
