@@ -571,7 +571,7 @@ window.__ModuleLoader__.load({
     const EPUB_TOC_KEY = 'bookshelf.epubToc';
     // Bump this on every client change: it shows up in the panel header so a
     // stale bundle in the browser is obvious.
-    const BUILD = 'r22';
+    const BUILD = 'r23';
     // The reading position is mirrored in localStorage on every page turn. It is
     // synchronous, survives a module reload and does not depend on the Host
     // keeping this panel mounted — the IndexedDB row is the slower copy.
@@ -1981,7 +1981,17 @@ window.__ModuleLoader__.load({
 .bk-shelf-title{font-size:19px;font-weight:600;flex:1;letter-spacing:.5px}
 .bk-iconbtn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:none;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:inherit;cursor:pointer;padding:0}
 .bk-iconbtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.bk-shelf-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:18px 16px;padding:6px 22px 28px;align-content:start}
+/* The shelf scrolls as one column of format sections, so EPUB and PDF never
+   share a grid. A section header only appears when both formats are present —
+   a lone "EPUB 3" above three covers would be noise. */
+.bk-shelf-body{flex:1;min-height:0;overflow-y:auto;padding:6px 22px 28px}
+.bk-shelf-section{display:flex;flex-direction:column;gap:10px}
+.bk-shelf-section + .bk-shelf-section{margin-top:26px}
+.bk-shelf-sectionhead{display:flex;align-items:center;gap:8px;padding:0 2px}
+.bk-shelf-sectiontitle{font-size:12px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;opacity:.62;white-space:nowrap}
+.bk-shelf-sectioncount{font-size:11px;opacity:.45;font-variant-numeric:tabular-nums}
+.bk-shelf-sectionrule{flex:1;height:1px;background:var(--dsw-alias-border-l2,rgba(127,127,127,.22))}
+.bk-shelf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:18px 16px;align-content:start}
 .bk-book{display:flex;flex-direction:column;gap:6px;min-width:0}
 .bk-cover{position:relative;aspect-ratio:3/4;border-radius:6px;overflow:hidden;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.16);background:linear-gradient(140deg,#5a7d9c,#31465c);border:none;padding:0;transition:transform .18s ease,box-shadow .18s ease}
 .bk-cover img{width:100%;height:100%;object-fit:cover;display:block}
@@ -2479,6 +2489,17 @@ window.__ModuleLoader__.load({
         return books.filter((b) => bookGroups[b.id] === filter);
       }, [books, bookGroups, filter]);
 
+      // 全部 and the custom groups can hold both formats; EPUB and PDF never
+      // share a grid. A format with no book is left out entirely.
+      const sections = useMemo(() => {
+        const epub = shown.filter((b) => b.kind !== 'pdf');
+        const pdf = shown.filter((b) => b.kind === 'pdf');
+        const out = [];
+        if (epub.length > 0) out.push({ kind: 'epub', label: t('shelf.epub'), books: epub });
+        if (pdf.length > 0) out.push({ kind: 'pdf', label: 'PDF', books: pdf });
+        return out;
+      }, [shown]);
+
       const assign = useCallback((record, groupId) => {
         setBookGroups((prev) => {
           const next = { ...prev };
@@ -2601,11 +2622,21 @@ window.__ModuleLoader__.load({
               e('div', { className: 'bk-empty-title' }, t('shelf.groupEmpty')),
               e('div', { className: 'bk-empty-hint' }, t('shelf.groupEmptyHint')),
             )
-            : e('div', { className: 'bk-shelf-grid' },
-              ...shown.map((record) => e(CoverCard, {
-                key: record.id, record, onOpen, onDelete,
-                groups, groupId: bookGroups[record.id] ?? null, onAssign: assign,
-              })),
+            : e('div', { className: 'bk-shelf-body' },
+              ...sections.map((section) => e('section', { key: section.kind, className: 'bk-shelf-section' },
+                // A header per format, but only when the view really holds both.
+                sections.length > 1 && e('div', { className: 'bk-shelf-sectionhead' },
+                  e('span', { className: 'bk-shelf-sectiontitle' }, section.label),
+                  e('span', { className: 'bk-shelf-sectioncount' }, String(section.books.length)),
+                  e('span', { className: 'bk-shelf-sectionrule' }),
+                ),
+                e('div', { className: 'bk-shelf-grid' },
+                  ...section.books.map((record) => e(CoverCard, {
+                    key: record.id, record, onOpen, onDelete,
+                    groups, groupId: bookGroups[record.id] ?? null, onAssign: assign,
+                  })),
+                ),
+              )),
             ),
       );
     }
