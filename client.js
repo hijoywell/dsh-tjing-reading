@@ -4,8 +4,8 @@
 //   - `main` keyed panel `reader` — the bookshelf / reader surfaces.
 // Documents are imported through the browser file picker (or drag & drop) and
 // persisted in IndexedDB; EPUB files are unpacked in the browser with the
-// platform DecompressionStream, PDF files render through the browser's native
-// PDF viewer.
+// platform DecompressionStream, PDF files are drawn by the vendored pdf.js on
+// a canvas so the reader owns the whole pane (no browser PDF viewer chrome).
 window.__ModuleLoader__.load({
   // The loader id MUST equal the package name in package.json: the Host resolves
   // the client half by package name, so a stale id leaves the module unregistered.
@@ -32,6 +32,10 @@ window.__ModuleLoader__.load({
       'shelf.continue': '继续阅读',
       'shelf.remove': '从竹居移除',
       'reader.back': '返回竹居',
+      'reader.loading': '正在载入文档…',
+      'reader.zoomIn': '放大',
+      'reader.zoomOut': '缩小',
+      'reader.fitWidth': '适应宽度',
       'reader.toc': '目录',
       'reader.settings': '界面',
       'reader.prev': '上一章',
@@ -94,6 +98,15 @@ window.__ModuleLoader__.load({
       'reader.notesTitle': '书签与笔记',
       'reader.tabBookmarks': '书签',
       'reader.tabMarks': '划线',
+      'reader.tabToc': '目录',
+      'reader.tocEmpty': '这本书没有目录',
+      'reader.pdfPages': '页码',
+      'reader.pdfPageN': '第 {n} 页',
+      'reader.pdfJump': '跳到第几页',
+      'reader.pdfGo': '跳转',
+      'reader.copy': '复制',
+      'reader.highlight': '高亮',
+      'reader.pdfBookmarksEmpty': '还没有书签，点右上角的书签按钮就能记下当前页',
       'reader.notesEmpty': '还没有书签，点顶部的书签按钮就能记下这一页',
       'reader.marksEmpty': '还没有划线，选中正文就能划线、写想法',
       'reader.markNote': '想法',
@@ -125,6 +138,10 @@ window.__ModuleLoader__.load({
       'shelf.continue': 'Continue reading',
       'shelf.remove': 'Remove from Zhu Ju',
       'reader.back': 'Back to Zhu Ju',
+      'reader.loading': 'Loading the document…',
+      'reader.zoomIn': 'Zoom in',
+      'reader.zoomOut': 'Zoom out',
+      'reader.fitWidth': 'Fit width',
       'reader.toc': 'Contents',
       'reader.settings': 'Display',
       'reader.prev': 'Previous chapter',
@@ -187,6 +204,15 @@ window.__ModuleLoader__.load({
       'reader.notesTitle': 'Bookmarks & notes',
       'reader.tabBookmarks': 'Bookmarks',
       'reader.tabMarks': 'Highlights',
+      'reader.tabToc': 'Contents',
+      'reader.tocEmpty': 'This book has no contents',
+      'reader.pdfPages': 'Pages',
+      'reader.pdfPageN': 'Page {n}',
+      'reader.pdfJump': 'Go to page',
+      'reader.pdfGo': 'Go',
+      'reader.copy': 'Copy',
+      'reader.highlight': 'Highlight',
+      'reader.pdfBookmarksEmpty': 'No bookmarks yet — the bookmark button in the corner marks the current page',
       'reader.notesEmpty': 'No bookmarks yet — the bookmark button in the bar marks this page',
       'reader.marksEmpty': 'No highlights yet — select text to highlight it or write a note',
       'reader.markNote': 'Note',
@@ -263,7 +289,10 @@ window.__ModuleLoader__.load({
     // v2 adds the `marks` store (书签 / 划线 / 批注). It lives beside `books`
     // instead of inside the record on purpose: a record carries the whole book
     // file, so saving one highlight through `books` would rewrite megabytes.
-    const DB_VERSION = 2;
+    // v3 adds the `reading` store (阅读进度 / 最近阅读) for the same reason — a
+    // PDF can be hundreds of megabytes, and rewriting it on every page turn is
+    // both slow and the first thing to fail when the tab closes mid-write.
+    const DB_VERSION = 3;
     function openDb() {
       return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -274,6 +303,7 @@ window.__ModuleLoader__.load({
             const marks = db.createObjectStore('marks', { keyPath: 'id' });
             marks.createIndex('book', 'bookId', { unique: false });
           }
+          if (!db.objectStoreNames.contains('reading')) db.createObjectStore('reading', { keyPath: 'bookId' });
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -336,6 +366,44 @@ window.__ModuleLoader__.load({
         };
         req.onerror = () => reject(req.error);
       });
+    }
+
+    /* 阅读进度 lives in its own store: a row is a few dozen bytes, so writing it
+       on every page turn never touches the (possibly huge) book file. */
+    function dbReadingAll(db) {
+      return new Promise((resolve, reject) => {
+        const req = db.transaction('reading').objectStore('reading').getAll();
+        req.onsuccess = () => resolve(req.result ?? []);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    function dbPutReading(db, row) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('reading', 'readwrite');
+        tx.objectStore('reading').put(row);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+    function dbDeleteReading(db, bookId) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('reading', 'readwrite');
+        tx.objectStore('reading').delete(bookId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+    /** A book record as the reader sees it: file + metadata + reading state. */
+    function withReadingState(record, state) {
+      if (!state) return record;
+      const progress = {
+        ...(record.progress ?? {}),
+        ...(state.page != null ? { page: state.page } : null),
+        ...(state.ratio != null ? { ratio: state.ratio } : null),
+        ...(state.offset != null ? { offset: state.offset } : null),
+        ...(state.chapter != null ? { chapter: state.chapter } : null),
+      };
+      return { ...record, progress, lastRead: state.lastRead ?? record.lastRead };
     }
 
     /* ------------------------------------------------------------------ *
@@ -448,6 +516,34 @@ window.__ModuleLoader__.load({
      * Preferences (reader display)
      * ------------------------------------------------------------------ */
     const PREFS_KEY = 'bookshelf.prefs';
+    // Whether the PDF 目录 panel is docked open — remembered across sessions.
+    const TOC_KEY = 'bookshelf.pdfToc';
+    const EPUB_TOC_KEY = 'bookshelf.epubToc';
+    // Bump this on every client change: it shows up in the panel header so a
+    // stale bundle in the browser is obvious.
+    const BUILD = 'r18';
+    // The reading position is mirrored in localStorage on every page turn. It is
+    // synchronous, survives a module reload and does not depend on the Host
+    // keeping this panel mounted — the IndexedDB row is the slower copy.
+    const posKey = (bookId) => `bookshelf.pdfPos.${bookId}`;
+    function readLocalPos(bookId) {
+      try {
+        const raw = JSON.parse(localStorage.getItem(posKey(bookId)) ?? 'null');
+        if (raw && Number.isFinite(Number(raw.page))) {
+          return { page: Number(raw.page), offset: Number(raw.offset) || 0 };
+        }
+      } catch { /* ignore */ }
+      return null;
+    }
+    function writeLocalPos(bookId, pos) {
+      try {
+        localStorage.setItem(posKey(bookId), JSON.stringify({
+          page: pos.page, offset: pos.offset, at: Date.now(),
+        }));
+      } catch { /* ignore */ }
+    }
+    // Zoom steps relative to fit-width (100%), like a desktop previewer.
+    const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
     const THEMES = [
       { id: 'white', bg: '#ffffff', text: '#262626', muted: '#8a8a8a', accent: '#2f6f4f', bar: 'rgba(255,255,255,.97)', barText: '#262626', barBorder: 'rgba(0,0,0,.08)' },
       { id: 'sepia', bg: '#f5edda', text: '#40382a', muted: '#a09477', accent: '#2f6f4f', bar: 'rgba(245,237,218,.97)', barText: '#40382a', barBorder: 'rgba(64,56,42,.12)' },
@@ -467,6 +563,57 @@ window.__ModuleLoader__.load({
     function markInk(colorId, themeId) {
       const found = MARK_COLORS.find((c) => c.id === colorId) ?? MARK_COLORS[0];
       return themeId === 'dark' ? found.dark : found.light;
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 划线合并 — a second highlight over the same words must not stack.
+     * Rects are fractions of the page: [x, y, w, h]. Two rects belong to the
+     * same line when they share most of their vertical band; the uncovered
+     * strips of a line are what a wider selection actually adds.
+     * ------------------------------------------------------------------ */
+    const sameLine = (a, b) => {
+      const overlap = Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]);
+      return overlap >= Math.min(a[3], b[3]) * 0.5;
+    };
+    function rectOverlapArea(a, b) {
+      if (!sameLine(a, b)) return 0;
+      const w = Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]);
+      const h = Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]);
+      return w > 0 && h > 0 ? w * h : 0;
+    }
+    /** The parts of `rects` that `cover` does not already paint. */
+    function uncoveredRects(rects, cover) {
+      const out = [];
+      for (const rect of rects) {
+        const [x, y, w, h] = rect;
+        const cuts = [];
+        for (const c of cover) {
+          if (!sameLine(rect, c)) continue;
+          const start = Math.max(x, c[0]);
+          const end = Math.min(x + w, c[0] + c[2]);
+          if (end - start > 1e-4) cuts.push([start, end]);
+        }
+        if (cuts.length === 0) { out.push(rect); continue; }
+        cuts.sort((a, b) => a[0] - b[0]);
+        let cursor = x;
+        for (const [start, end] of cuts) {
+          if (start - cursor > 1e-3) out.push([cursor, y, start - cursor, h]);
+          cursor = Math.max(cursor, end);
+        }
+        if (x + w - cursor > 1e-3) out.push([cursor, y, x + w - cursor, h]);
+      }
+      return out;
+    }
+    /** Drop rects that repaint the same strip twice (a selection can hand back
+     *  several rects for one line, and stacking them darkens the wash). */
+    function tidyRects(rects) {
+      const out = [];
+      for (const rect of rects) {
+        const area = Math.max(1e-9, rect[2] * rect[3]);
+        const duplicate = out.some((kept) => sameLine(kept, rect) && rectOverlapArea(kept, rect) > area * 0.6);
+        if (!duplicate) out.push(rect);
+      }
+      return out;
     }
     function markChip(colorId) {
       return (MARK_COLORS.find((c) => c.id === colorId) ?? MARK_COLORS[0]).chip;
@@ -1805,8 +1952,8 @@ window.__ModuleLoader__.load({
 .bk-drawer-head .bk-iconbtn{margin-left:auto}
 .bk-drawer-list{flex:1;overflow-y:auto;padding:4px 8px 16px}
 .bk-drawer-row{display:block;width:100%;border:none;background:transparent;color:inherit;text-align:left;font-size:14px;padding:10px 12px;border-radius:8px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.bk-drawer-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.bk-drawer-row.bk-current{color:#2f6f4f;font-weight:600}
+.bk-drawer-row:hover{background:rgba(127,127,127,.14)}
+.bk-drawer-row.bk-current{color:var(--bk-accent,#2f6f4f);font-weight:600}
 /* ---- 划线 / 书签 / 批注 ------------------------------------------------
    A mark paints its own text, so it must never change metrics: no padding, no
    border, no font change — otherwise every highlight re-wraps its paragraph and
@@ -1847,7 +1994,7 @@ window.__ModuleLoader__.load({
 .bk-notes-tab.bk-on{opacity:1;font-weight:600;background:rgba(127,127,127,.15)}
 .bk-note-row{display:flex;align-items:flex-start;gap:2px;padding:1px 2px}
 .bk-note-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;border:none;background:transparent;color:inherit;text-align:left;font-family:inherit;font-size:13.5px;line-height:1.6;padding:8px;border-radius:8px;cursor:pointer}
-.bk-note-main:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+.bk-note-main:hover{background:rgba(127,127,127,.14)}
 .bk-note-quote{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .bk-note-quote.bk-marker{background:var(--bk-mark-ink,rgba(255,206,61,.45));border-radius:3px;padding:1px 4px}
 .bk-note-sub{font-size:11.5px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1870,6 +2017,71 @@ window.__ModuleLoader__.load({
 .bk-dot:hover{transform:scale(1.08)}
 .bk-dot.bk-on{box-shadow:inset 0 0 0 1px rgba(127,127,127,.28),0 0 0 2px var(--bk-bar),0 0 0 4px var(--bk-barText)}
 .bk-pdf{flex:1;min-height:0;width:100%;border:none;background:#3a3d44}
+/* PDF canvas surface: the pages own the pane, the controls float above them. */
+.bk-reader-body{flex:1;min-height:0;display:flex;flex-direction:row;overflow:hidden}
+.bk-reader-stage{position:relative;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+/* 目录 panel — docked on the left like the app sidebar (no backdrop, pushes the pages). */
+/* The panel wears the reading paper: the body theme decides the background,
+   the text colour and the divider, so the two halves always look like one page. */
+.bk-dock-panel{flex:none;width:min(300px,52%);min-height:0;display:flex;flex-direction:column;background:var(--bk-paper,transparent);color:inherit;border-right:1px solid var(--bk-barBorder,rgba(0,0,0,.1));box-shadow:none}
+.bk-dock-panel-head{display:flex;align-items:center;gap:8px;padding:14px 12px 8px;font-size:15px;font-weight:600}
+.bk-dock-panel-head .bk-iconbtn{margin-left:auto}
+.bk-dock-build{margin-left:auto;font-size:10px;opacity:.4;font-variant-numeric:tabular-nums;letter-spacing:.5px}
+.bk-dock-panel-head .bk-iconbtn{margin-left:4px}
+.bk-dock-panel .bk-notes-tabs{padding:0 10px 8px}
+.bk-dock-panel .bk-drawer-list{padding:4px 6px 16px}
+.bk-dock-addbtn{margin:2px 6px 10px;padding:8px 10px;border:1px dashed var(--bk-barBorder,rgba(127,127,127,.4));border-radius:8px;background:transparent;color:inherit;font-family:inherit;font-size:13px;cursor:pointer;text-align:center;width:calc(100% - 12px)}
+.bk-dock-addbtn:hover{background:rgba(127,127,127,.14)}
+.bk-pdfview{flex:1;min-height:0;position:relative;overflow-y:auto;overscroll-behavior:contain;background:var(--bk-paper,#3a3d44)}
+.bk-pdfview-inner{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 12px 48px;min-height:100%}
+.bk-pdfpage{position:relative;flex:none;background:#fff;border-radius:2px;box-shadow:0 2px 14px rgba(0,0,0,.32);overflow:hidden}
+.bk-pdfpage canvas{display:block;width:100%;height:100%}
+/* pdf.js text layer: invisible, selectable text laid over the canvas. */
+.bk-pdf-text{position:absolute;inset:0;overflow:hidden;line-height:1;text-align:initial;text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;z-index:2}
+.bk-pdf-text :is(span,br){color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
+.bk-pdf-text span.markedContent{top:0;height:0}
+.bk-pdf-text .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:-1;cursor:default;user-select:none}
+.bk-pdfpage ::selection{background:rgba(47,111,79,.28)}
+/* 划线 wash over the canvas (under the text layer, never intercepts clicks). */
+.bk-pdf-hl-layer{position:absolute;inset:0;z-index:1;pointer-events:none}
+.bk-pdf-hl{position:absolute;border-radius:2px;pointer-events:none;mix-blend-mode:multiply}
+/* Selection toolbar: light grey, like a system text menu. */
+.bk-pdf-selbar{position:absolute;z-index:16;transform:translateX(-50%);display:flex;align-items:center;gap:1px;padding:3px;border-radius:10px;background:#e9eaec;color:#23262b;box-shadow:0 8px 22px rgba(0,0,0,.26);animation:bk-fade-in .12s ease}
+.bk-pdf-selbar button{border:none;background:transparent;color:inherit;font-family:inherit;font-size:12.5px;line-height:1.2;padding:6px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.bk-pdf-selbar button:hover:not(:disabled){background:rgba(0,0,0,.08)}
+.bk-pdf-selbar button:disabled{opacity:.35;cursor:default}
+.bk-pdf-selbar button.bk-on{color:var(--bk-accent,#2f6f4f);font-weight:600}
+.bk-pdf-selbar .bk-pdf-selbar-sep{width:1px;height:16px;background:rgba(0,0,0,.14);margin:0 2px}
+.bk-pdf-loading{color:var(--bk-muted,inherit);opacity:.7;font-size:13px;padding:40px 0}
+.bk-pdf-ribbon{position:absolute;top:0;right:10px;width:14px;height:22px;background:var(--bk-accent,#2f6f4f);clip-path:polygon(0 0,100% 0,100% 100%,50% 74%,0 100%);pointer-events:none}
+.bk-pdf-bar{position:absolute;z-index:14;display:flex;gap:8px;opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .18s ease,transform .18s ease}
+.bk-pdf-bar.on{opacity:1;transform:none;pointer-events:auto}
+.bk-pdf-bar-left{left:12px;top:12px}
+.bk-pdf-bar-right{right:12px;top:12px}
+.bk-pdf-fab{width:34px;height:34px;padding:0;border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--bk-bar,#2b2f36);color:var(--bk-barText,#fff);box-shadow:0 2px 10px rgba(0,0,0,.3);transition:filter .15s ease,color .15s ease}
+.bk-pdf-fab:hover{filter:brightness(1.12)}
+.bk-pdf-fab.bk-on{color:#f5c451}
+.bk-pdf-fab.bk-open{background:var(--bk-accent,#2f6f4f);color:#fff}
+.bk-pdf-zoom{display:flex;align-items:center;gap:1px;padding:2px;border-radius:999px;background:var(--bk-bar,#2b2f36);color:var(--bk-barText,#fff);box-shadow:0 2px 10px rgba(0,0,0,.3)}
+.bk-pdf-zoom button{border:none;background:transparent;color:inherit;font-family:inherit;font-size:16px;line-height:1;height:30px;min-width:28px;border-radius:999px;cursor:pointer}
+.bk-pdf-zoom button:hover{background:rgba(127,127,127,.28)}
+.bk-pdf-zoom .bk-pdf-zoomval{font-size:12px;font-variant-numeric:tabular-nums;padding:0 7px;min-width:46px}
+.bk-pdf-jump{display:flex;gap:8px;padding:6px 8px 10px;flex:none}
+.bk-pdf-jump .bk-fontinput{border-color:var(--dsw-alias-border-l2,rgba(127,127,127,.4))}
+.bk-pdf-jumpbtn{flex:none;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.4));border-radius:8px;background:transparent;color:inherit;font-family:inherit;font-size:13px;padding:0 14px;cursor:pointer}
+.bk-pdf-jumpbtn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+.bk-pdf-outline{border-bottom:1px solid rgba(127,127,127,.18);padding-bottom:6px;margin-bottom:8px}
+.bk-pdf-thumbhead{font-size:12px;opacity:.6;padding:4px 12px 8px}
+.bk-pdf-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px 10px;padding:0 8px 20px;justify-items:center}
+.bk-pdf-thumb{position:relative;display:flex;flex-direction:column;gap:4px;padding:0;border:none;background:transparent;cursor:pointer;font-family:inherit;color:inherit}
+.bk-pdf-thumb canvas{display:block;border-radius:3px;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.24);transition:box-shadow .15s ease,transform .15s ease}
+.bk-pdf-thumb:hover canvas{transform:translateY(-1px);box-shadow:0 3px 10px rgba(0,0,0,.3)}
+.bk-pdf-thumb.bk-current canvas{box-shadow:0 0 0 2px var(--bk-accent,#2f6f4f),0 3px 10px rgba(0,0,0,.3)}
+.bk-pdf-thumbno{font-size:11.5px;opacity:.65;font-variant-numeric:tabular-nums}
+.bk-pdf-thumb.bk-current .bk-pdf-thumbno{opacity:1;font-weight:600;color:var(--bk-accent,#2f6f4f)}
+.bk-pdf-hud{position:absolute;right:12px;bottom:16px;z-index:14;display:flex;align-items:center;padding:5px 11px;border-radius:999px;background:var(--bk-bar,#2b2f36);color:var(--bk-barText,#fff);box-shadow:0 2px 10px rgba(0,0,0,.3);opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .18s ease,transform .18s ease}
+.bk-pdf-hud.on{opacity:1;transform:none;pointer-events:auto}
+.bk-pdf-hud .bk-pdf-pageno{font-size:12px;opacity:.9;font-variant-numeric:tabular-nums;white-space:nowrap}
 .bk-fontinput{flex:1;border:1px solid var(--bk-barBorder);border-radius:8px;background:transparent;color:inherit;font-size:13px;padding:7px 10px;min-width:0}
 .bk-fontinput::placeholder{color:inherit;opacity:.45}
 .bk-loading{position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;background:var(--bk-bar,rgba(0,0,0,.4));color:var(--bk-barText,var(--dsw-alias-label-primary))}
@@ -2014,8 +2226,11 @@ window.__ModuleLoader__.load({
       const percent = progress && record.chapterCount
         ? Math.min(100, Math.round(((progress.chapter ?? 0) + (progress.ratio ?? 0)) / record.chapterCount * 100))
         : 0;
+      const pdfPercent = isPdf && progress?.ratio ? Math.min(100, Math.round(progress.ratio * 100)) : 0;
       const meta = isPdf
-        ? t('shelf.pdf')
+        ? pdfPercent > 0
+          ? `${t('shelf.read', { p: pdfPercent })}${progress?.page ? ` · ${t('reader.pdfPageN', { n: progress.page })}` : ''}`
+          : t('shelf.pdf')
         : percent > 0 ? t('shelf.read', { p: percent }) : t('shelf.unread');
 
       return e('div', { className: 'bk-book' },
@@ -2099,27 +2314,22 @@ window.__ModuleLoader__.load({
      * The reading toolbar — top of the reader, previous style: back, contents,
      * current chapter name, display settings and theme.
      */
-    function ReaderBar({ title, sub, page, hidden, bookmarked, onBack, onToc, onBookmark, onNotes, onSettings, onTheme }) {
+    function ReaderBar({ title, sub, page, hidden, tocOpen, onBack, onToc, onSettings, onTheme }) {
       return e('div', {
         className: `bk-topbar${hidden ? ' bk-hidden' : ''}`,
         onClick: (ev) => ev.stopPropagation(),
       },
         e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.back'), title: t('reader.back'), onClick: onBack },
           e(Icon, { paths: ICON_BACK, size: 16 })),
-        e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.toc'), title: t('reader.toc'), onClick: onToc },
-          e(Icon, { paths: ICON_TOC, size: 16 })),
+        // 目录 also holds 书签 and 划线: one docked panel instead of three buttons.
+        e('button', {
+          className: `bk-barbtn${tocOpen ? ' bk-on' : ''}`, type: 'button',
+          'aria-label': t('reader.toc'), title: t('reader.toc'),
+          'aria-expanded': tocOpen ? 'true' : 'false',
+          onClick: onToc,
+        }, e(Icon, { paths: ICON_TOC, size: 16 })),
         e('span', { className: 'bk-bar-title' }, sub || title),
         page && e('span', { className: 'bk-bar-page' }, page),
-        // 书签: one tap marks the page, the same tap takes the mark away.
-        e('button', {
-          className: `bk-barbtn${bookmarked ? ' bk-on' : ''}`, type: 'button',
-          'aria-label': bookmarked ? t('reader.bookmarkRemove') : t('reader.bookmarkAdd'),
-          title: bookmarked ? t('reader.bookmarkRemove') : t('reader.bookmarkAdd'),
-          'data-bookmarked': bookmarked ? 'true' : 'false',
-          onClick: onBookmark,
-        }, e(Icon, { paths: ICON_BOOKMARK, fillPaths: bookmarked ? ICON_BOOKMARK : [], size: 16 })),
-        e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.notes'), title: t('reader.notes'), onClick: onNotes },
-          e(Icon, { paths: ICON_NOTES, size: 16 })),
         e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.settings'), title: t('reader.settings'), onClick: onSettings },
           e('span', { style: { fontSize: 15, fontWeight: 600, letterSpacing: 1 } }, 'Aa')),
         e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.theme'), title: t('reader.theme'), onClick: onTheme },
@@ -2144,10 +2354,18 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function TocDrawer({ epub, chapter, currentFragment, onClose, onGoto }) {
-      const rows = epub.toc ?? [];
+    /** 目录 / 书签 / 划线 for an EPUB, docked like the app sidebar — the same
+     *  panel the PDF reader uses, so both books behave the same way. */
+    function EpubTocPanel({
+      epub, chapter, currentFragment, marks, themeId, bookmarked,
+      onClose, onGoto, onGotoMark, onToggleBookmark, onRemove, onEditNote,
+    }) {
+      const [tab, setTab] = useState('toc');
       const listRef = useRef(null);
-      const stop = (ev) => ev.stopPropagation();
+      const rows = epub.toc ?? [];
+      const bookmarks = (marks ?? []).filter((mark) => mark.kind === 'bookmark');
+      const highlights = (marks ?? []).filter((mark) => mark.kind !== 'bookmark');
+      const titleOf = (index) => epub.titles?.[index] ?? t('reader.chapterN', { n: (index ?? 0) + 1 });
       // Highlight the entry that contains the current reading position: match the
       // in-chapter anchor when the book has them, otherwise the chapter itself.
       const chapterRows = rows.filter((row) => row.chapter === chapter);
@@ -2157,27 +2375,86 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         const node = listRef.current?.querySelector('[data-active="true"]');
         if (node) node.scrollIntoView({ block: 'center' });
-      }, []);
-      return e(React.Fragment, null,
-        e('div', { className: 'bk-drawer-backdrop', onClick: (ev) => { ev.stopPropagation(); onClose(); } }),
-        e('div', { className: 'bk-drawer', role: 'dialog', 'aria-label': t('reader.toc'), onClick: stop },
-          e('div', { className: 'bk-drawer-head' },
-            t('reader.toc'),
-            e('button', { className: 'bk-iconbtn', type: 'button', 'aria-label': t('reader.toc'), onClick: onClose },
-              e(Icon, { paths: ICON_CLOSE, size: 16 })),
+      }, [tab, chapter, currentFragment]);
+
+      const row = (mark) => {
+        const isBookmark = mark.kind === 'bookmark';
+        const sub = [titleOf(mark.chapter), isBookmark && mark.ratio ? `${Math.round(mark.ratio * 100)}%` : '']
+          .filter(Boolean).join(' · ');
+        return e('div', { className: 'bk-note-row', key: mark.id },
+          e('button', {
+            className: 'bk-note-main', type: 'button', title: t('reader.markJump'),
+            onClick: () => (isBookmark ? onGoto(mark) : onGotoMark(mark)),
+          },
+            e('span', {
+              className: `bk-note-quote${isBookmark ? '' : ' bk-marker'}`,
+              style: isBookmark ? undefined : { '--bk-mark-ink': markInk(mark.color, themeId) },
+            }, mark.text || titleOf(mark.chapter)),
+            mark.note && e('span', { className: 'bk-note-thought' }, mark.note),
+            e('span', { className: 'bk-note-sub' }, sub),
           ),
-          e('div', { className: 'bk-drawer-list', ref: listRef },
-            ...rows.map((row, i) => e('button', {
-              key: `${row.chapter}-${row.fragment ?? ''}-${i}`,
-              type: 'button',
-              className: `bk-drawer-row${row === activeRow ? ' bk-current' : ''}`,
-              'data-active': row === activeRow ? 'true' : undefined,
-              style: { paddingLeft: `${12 + (row.depth ?? 0) * 14}px` },
-              title: row.label,
-              onClick: () => { onGoto(row.chapter, row.fragment); onClose(); },
-            }, row.label)),
-          ),
+          e('button', {
+            className: 'bk-iconbtn', type: 'button',
+            title: t('reader.markNote'), 'aria-label': t('reader.markNote'),
+            onClick: () => onEditNote(mark),
+          }, e(Icon, { paths: ICON_NOTES, size: 15 })),
+          e('button', {
+            className: 'bk-iconbtn', type: 'button',
+            title: t('reader.markDelete'), 'aria-label': t('reader.markDelete'),
+            onClick: () => onRemove(mark.id),
+          }, e(Icon, { paths: ICON_TRASH, size: 15 })),
+        );
+      };
+
+      return e('aside', { className: 'bk-dock-panel', 'aria-label': t('reader.toc') },
+        e('div', { className: 'bk-dock-panel-head' },
+          t('reader.toc'),
+          // Build marker: tells a stale bundle apart from a logic bug.
+          e('span', { className: 'bk-dock-build', title: 'dsh-tjing-reading build' }, BUILD),
+          e('button', {
+            className: 'bk-iconbtn', type: 'button',
+            'aria-label': t('reader.toc'), title: t('reader.toc'), onClick: onClose,
+          }, e(Icon, { paths: ICON_CLOSE, size: 16 })),
         ),
+        e('div', { className: 'bk-notes-tabs' },
+          e('button', {
+            className: `bk-notes-tab${tab === 'toc' ? ' bk-on' : ''}`, type: 'button',
+            onClick: () => setTab('toc'),
+          }, t('reader.tabToc')),
+          e('button', {
+            className: `bk-notes-tab${tab === 'bookmark' ? ' bk-on' : ''}`, type: 'button',
+            onClick: () => setTab('bookmark'),
+          }, `${t('reader.tabBookmarks')} ${bookmarks.length}`),
+          e('button', {
+            className: `bk-notes-tab${tab === 'mark' ? ' bk-on' : ''}`, type: 'button',
+            onClick: () => setTab('mark'),
+          }, `${t('reader.tabMarks')} ${highlights.length}`),
+        ),
+        tab === 'toc'
+          ? e('div', { className: 'bk-drawer-list', ref: listRef },
+            rows.length === 0
+              ? e('div', { className: 'bk-note-empty' }, t('reader.tocEmpty'))
+              : rows.map((item, i) => e('button', {
+                key: `${item.chapter}-${item.fragment ?? ''}-${i}`,
+                type: 'button',
+                className: `bk-drawer-row${item === activeRow ? ' bk-current' : ''}`,
+                'data-active': item === activeRow ? 'true' : undefined,
+                style: { paddingLeft: `${12 + (item.depth ?? 0) * 14}px` },
+                title: item.label,
+                onClick: () => onGoto(item.chapter, item.fragment, item.label),
+              }, item.label)))
+          : tab === 'bookmark'
+            ? e('div', { className: 'bk-drawer-list' },
+              e('button', {
+                className: 'bk-dock-addbtn', type: 'button', onClick: onToggleBookmark,
+              }, bookmarked ? t('reader.bookmarkRemove') : t('reader.bookmarkAdd')),
+              bookmarks.length === 0
+                ? e('div', { className: 'bk-note-empty' }, t('reader.notesEmpty'))
+                : bookmarks.map(row))
+            : e('div', { className: 'bk-drawer-list' },
+              highlights.length === 0
+                ? e('div', { className: 'bk-note-empty' }, t('reader.marksEmpty'))
+                : highlights.map(row)),
       );
     }
 
@@ -2269,66 +2546,6 @@ window.__ModuleLoader__.load({
           draft.id && e('button', { className: 'bk-notepop-btn bk-danger', type: 'button', onClick: () => onDelete(draft.id) }, t('reader.markDelete')),
           e('button', { className: 'bk-notepop-btn', type: 'button', onClick: onClose }, t('reader.markCancel')),
           e('button', { className: 'bk-notepop-btn bk-primary', type: 'button', onClick: () => onSave({ text, color }) }, t('reader.markSave')),
-        ),
-      );
-    }
-
-    /** 笔记 drawer — bookmarks and highlights, in the same two-tab list. */
-    function NotesDrawer({ marks, titleOf, themeId, onClose, onGoto, onGotoMark, onRemove, onEditNote }) {
-      const [tab, setTab] = useState('bookmark');
-      const bookmarks = marks.filter((mark) => mark.kind === 'bookmark');
-      const highlights = marks.filter((mark) => mark.kind !== 'bookmark');
-      const rows = tab === 'bookmark' ? bookmarks : highlights;
-      const stop = (ev) => ev.stopPropagation();
-      const row = (mark) => {
-        const isBookmark = mark.kind === 'bookmark';
-        const sub = [titleOf(mark.chapter), isBookmark && mark.ratio ? `${Math.round(mark.ratio * 100)}%` : '']
-          .filter(Boolean).join(' · ');
-        return e('div', { className: 'bk-note-row', key: mark.id },
-          e('button', {
-            className: 'bk-note-main', type: 'button', title: t('reader.markJump'),
-            onClick: () => (isBookmark ? onGoto(mark) : onGotoMark(mark)),
-          },
-            e('span', {
-              className: `bk-note-quote${isBookmark ? '' : ' bk-marker'}`,
-              style: isBookmark ? undefined : { '--bk-mark-ink': markInk(mark.color, themeId) },
-            }, mark.text || titleOf(mark.chapter)),
-            mark.note && e('span', { className: 'bk-note-thought' }, mark.note),
-            e('span', { className: 'bk-note-sub' }, sub),
-          ),
-          e('button', {
-            className: 'bk-iconbtn', type: 'button', title: t('reader.markNote'), 'aria-label': t('reader.markNote'),
-            onClick: () => onEditNote(mark),
-          }, e(Icon, { paths: ICON_NOTES, size: 15 })),
-          e('button', {
-            className: 'bk-iconbtn', type: 'button', title: t('reader.markDelete'), 'aria-label': t('reader.markDelete'),
-            onClick: () => onRemove(mark.id),
-          }, e(Icon, { paths: ICON_TRASH, size: 15 })),
-        );
-      };
-      return e(React.Fragment, null,
-        e('div', { className: 'bk-drawer-backdrop', onClick: (ev) => { ev.stopPropagation(); onClose(); } }),
-        e('div', { className: 'bk-drawer bk-notes-drawer', role: 'dialog', 'aria-label': t('reader.notesTitle'), onClick: stop },
-          e('div', { className: 'bk-drawer-head' },
-            t('reader.notesTitle'),
-            e('button', { className: 'bk-iconbtn', type: 'button', 'aria-label': t('reader.notes'), onClick: onClose },
-              e(Icon, { paths: ICON_CLOSE, size: 16 })),
-          ),
-          e('div', { className: 'bk-notes-tabs' },
-            e('button', {
-              className: `bk-notes-tab${tab === 'bookmark' ? ' bk-on' : ''}`, type: 'button',
-              onClick: () => setTab('bookmark'),
-            }, `${t('reader.tabBookmarks')} ${bookmarks.length}`),
-            e('button', {
-              className: `bk-notes-tab${tab === 'mark' ? ' bk-on' : ''}`, type: 'button',
-              onClick: () => setTab('mark'),
-            }, `${t('reader.tabMarks')} ${highlights.length}`),
-          ),
-          e('div', { className: 'bk-drawer-list' },
-            rows.length === 0
-              ? e('div', { className: 'bk-note-empty' }, t(tab === 'bookmark' ? 'reader.notesEmpty' : 'reader.marksEmpty'))
-              : rows.map(row),
-          ),
         ),
       );
     }
@@ -2518,31 +2735,872 @@ window.__ModuleLoader__.load({
       return { aiOpen, setAiOpen: update, aiClosing, requestClose };
     }
 
-    function PdfReader({ record, prefs, onBack }) {
+    /* ------------------------------------------------------------------ *
+     * PDF surface — the vendored pdf.js draws every page on a canvas, so the
+     * reader owns the whole pane: no browser PDF viewer chrome (its own title
+     * bar and tool strip) sits on top of the pages. The controls are a
+     * WeChat-Read style floating pair (back button + page/zoom pill) that
+     * stays out of the way until the reader touches the pane.
+     * ------------------------------------------------------------------ */
+
+    /** Flatten a PDF outline into `{label, page, depth}` rows (page is 1-based). */
+    async function readPdfOutline(doc, items = null, depth = 0, out = []) {
+      const rows = items ?? (await doc.getOutline().catch(() => null)) ?? [];
+      for (const item of rows) {
+        let page = null;
+        try {
+          const dest = typeof item.dest === 'string' ? await doc.getDestination(item.dest) : item.dest;
+          if (Array.isArray(dest) && dest[0] != null) {
+            const target = dest[0];
+            const index = typeof target === 'object' ? await doc.getPageIndex(target) : target;
+            if (Number.isFinite(index)) page = index + 1;
+          }
+        } catch { /* a broken destination just has no page */ }
+        out.push({ label: item.title || '', page, depth });
+        if (item.items?.length) await readPdfOutline(doc, item.items, depth + 1, out);
+      }
+      return out;
+    }
+
+    /** One page thumbnail for the contents drawer; painted when it scrolls into view. */
+    function PdfThumb({ pdf, num, width, height, active, onPick }) {
+      const wrapRef = useRef(null);
+      const canvasRef = useRef(null);
+      useEffect(() => {
+        const el = wrapRef.current;
+        const canvas = canvasRef.current;
+        if (!el || !canvas || !pdf) return undefined;
+        let cancelled = false;
+        const io = new IntersectionObserver((entries) => {
+          if (!entries.some((entry) => entry.isIntersecting)) return;
+          io.disconnect();
+          (async () => {
+            try {
+              const page = await pdf.getPage(num);
+              if (cancelled) return;
+              const base = page.getViewport({ scale: 1 });
+              const viewport = page.getViewport({ scale: width / base.width });
+              const dpr = Math.min(window.devicePixelRatio || 1, 2);
+              canvas.width = Math.max(1, Math.floor(viewport.width * dpr));
+              canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
+              const ctx = canvas.getContext('2d');
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              await page.render({
+                canvasContext: ctx, viewport,
+                transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
+              }).promise;
+            } catch { /* leave the blank slot */ }
+          })();
+        }, { rootMargin: '500px 0px' });
+        io.observe(el);
+        return () => { cancelled = true; io.disconnect(); };
+      }, [pdf, num, width]);
+      return e('button', {
+        className: `bk-pdf-thumb${active ? ' bk-current' : ''}`, type: 'button', ref: wrapRef,
+        title: t('reader.pdfPageN', { n: num }), 'aria-label': t('reader.pdfPageN', { n: num }),
+        onClick: () => onPick(num),
+      },
+        e('canvas', { ref: canvasRef, style: { width: width + 'px', height: height + 'px' } }),
+        e('span', { className: 'bk-pdf-thumbno' }, num),
+      );
+    }
+
+    /** 目录 + 书签 for a PDF, docked like the app sidebar: a persistent left
+     *  panel (no backdrop, does not close on jump) toggled by the 目录 button. */
+    function PdfTocPanel({ pdf, outline, metrics, page, marks, onClose, onGoto, onRemoveMark }) {
+      const [tab, setTab] = useState('toc');
+      const [jump, setJump] = useState('');
+      const total = metrics.length;
+      const bookmarks = (marks ?? [])
+        .filter((mark) => mark.kind === 'bookmark')
+        .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
+      const highlights = (marks ?? [])
+        .filter((mark) => mark.kind === 'highlight')
+        .sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
+      const thumbWidth = 92;
+      const submitJump = (ev) => {
+        ev.preventDefault();
+        const n = Math.round(Number(jump));
+        if (Number.isFinite(n) && n >= 1 && n <= total) onGoto(n);
+        setJump('');
+      };
+      return e('aside', { className: 'bk-dock-panel', 'aria-label': t('reader.toc') },
+        e('div', { className: 'bk-dock-panel-head' },
+          t('reader.toc'),
+          e('button', {
+            className: 'bk-iconbtn', type: 'button',
+            'aria-label': t('reader.toc'), title: t('reader.toc'), onClick: onClose,
+          }, e(Icon, { paths: ICON_CLOSE, size: 16 })),
+        ),
+        e('div', { className: 'bk-notes-tabs' },
+          e('button', {
+            className: `bk-notes-tab${tab === 'toc' ? ' bk-on' : ''}`, type: 'button',
+            onClick: () => setTab('toc'),
+          }, t('reader.tabToc')),
+          e('button', {
+            className: `bk-notes-tab${tab === 'bookmark' ? ' bk-on' : ''}`, type: 'button',
+            onClick: () => setTab('bookmark'),
+          }, `${t('reader.tabBookmarks')} ${bookmarks.length}`),
+          e('button', {
+            className: `bk-notes-tab${tab === 'highlight' ? ' bk-on' : ''}`, type: 'button',
+            onClick: () => setTab('highlight'),
+          }, `${t('reader.tabMarks')} ${highlights.length}`),
+        ),
+        tab === 'toc'
+          ? e('div', { className: 'bk-drawer-list' },
+            e('form', { className: 'bk-pdf-jump', onSubmit: submitJump },
+              e('input', {
+                className: 'bk-fontinput', value: jump, inputMode: 'numeric',
+                placeholder: t('reader.pdfJump'), 'aria-label': t('reader.pdfJump'),
+                onChange: (ev) => setJump(ev.target.value.replace(/[^0-9]/g, '')),
+              }),
+              e('button', { className: 'bk-pdf-jumpbtn', type: 'submit' }, t('reader.pdfGo')),
+            ),
+            outline.length > 0 && e('div', { className: 'bk-pdf-outline' },
+              ...outline.map((row, i) => e('button', {
+                key: `${row.page ?? 'x'}-${i}`, type: 'button',
+                className: `bk-drawer-row${row.page === page ? ' bk-current' : ''}`,
+                style: { paddingLeft: `${12 + (row.depth ?? 0) * 14}px` },
+                title: row.label,
+                onClick: () => { if (row.page) onGoto(row.page); },
+              }, row.label || t('reader.pdfPageN', { n: row.page ?? 0 })))),
+            e('div', { className: 'bk-pdf-thumbhead' }, t('reader.pdfPages')),
+            e('div', { className: 'bk-pdf-thumbs' },
+              ...metrics.map((m, i) => {
+                const num = i + 1;
+                return e(PdfThumb, {
+                  key: num, pdf, num, width: thumbWidth,
+                  height: Math.max(24, Math.round(thumbWidth * (m.h / m.w))),
+                  active: num === page, onPick: onGoto,
+                });
+              })),
+          )
+          : tab === 'bookmark'
+            ? e('div', { className: 'bk-drawer-list' },
+              bookmarks.length === 0
+                ? e('div', { className: 'bk-note-empty' }, t('reader.pdfBookmarksEmpty'))
+                : bookmarks.map((mark) => e('div', { className: 'bk-note-row', key: mark.id },
+                  e('button', {
+                    className: 'bk-note-main', type: 'button', title: t('reader.markJump'),
+                    onClick: () => onGoto(mark.page),
+                  },
+                    e('span', { className: 'bk-note-quote' }, t('reader.pdfPageN', { n: mark.page })),
+                    e('span', { className: 'bk-note-sub' }, `${Math.round((mark.ratio ?? 0) * 100)}%`),
+                  ),
+                  e('button', {
+                    className: 'bk-iconbtn', type: 'button',
+                    title: t('reader.markDelete'), 'aria-label': t('reader.markDelete'),
+                    onClick: () => onRemoveMark(mark.id),
+                  }, e(Icon, { paths: ICON_TRASH, size: 15 })),
+                )))
+            : e('div', { className: 'bk-drawer-list' },
+              highlights.length === 0
+                ? e('div', { className: 'bk-note-empty' }, t('reader.marksEmpty'))
+                : highlights.map((mark) => e('div', { className: 'bk-note-row', key: mark.id },
+                  e('button', {
+                    className: 'bk-note-main', type: 'button', title: t('reader.markJump'),
+                    onClick: () => onGoto(mark.page),
+                  },
+                    e('span', {
+                      className: 'bk-note-quote bk-marker',
+                      style: { '--bk-mark-ink': markInk(mark.color, 'light') },
+                    }, mark.text),
+                    e('span', { className: 'bk-note-sub' }, t('reader.pdfPageN', { n: mark.page })),
+                  ),
+                  e('button', {
+                    className: 'bk-iconbtn', type: 'button',
+                    title: t('reader.markDelete'), 'aria-label': t('reader.markDelete'),
+                    onClick: () => onRemoveMark(mark.id),
+                  }, e(Icon, { paths: ICON_TRASH, size: 15 })),
+                ))),
+      );
+    }
+
+    function PdfCanvasPage({ pdf, num, scale, width, height, root, register, marked, highlights }) {
+      const wrapRef = useRef(null);
+      const canvasRef = useRef(null);
+      const textRef = useRef(null);
+      const paintedRef = useRef(false);
+      const busyRef = useRef(false);
+
+      useEffect(() => {
+        register(num, wrapRef.current);
+        return () => register(num, null);
+      }, [num]);
+
+      useEffect(() => {
+        const el = wrapRef.current;
+        const canvas = canvasRef.current;
+        if (!el || !canvas || !pdf) return undefined;
+        let cancelled = false;
+
+        const paint = async () => {
+          if (cancelled || paintedRef.current || busyRef.current) return;
+          busyRef.current = true;
+          try {
+            const lib = await loadPdfjs();
+            const page = await pdf.getPage(num);
+            if (cancelled) return;
+            const viewport = page.getViewport({ scale });
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = Math.max(1, Math.floor(viewport.width * dpr));
+            canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            await page.render({
+              canvasContext: ctx,
+              viewport,
+              transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
+            }).promise;
+            // Text layer: transparent, absolutely positioned spans over the canvas,
+            // so the page can be selected and copied like real text.
+            const holder = textRef.current;
+            if (holder && !cancelled) {
+              const textContent = await page.getTextContent();
+              if (cancelled) return;
+              holder.style.setProperty('--scale-factor', String(viewport.scale));
+              holder.textContent = '';
+              await lib.renderTextLayer({
+                textContentSource: textContent,
+                container: holder,
+                viewport,
+                textDivs: [],
+              }).promise;
+            }
+            if (!cancelled) paintedRef.current = true;
+          } catch (err) {
+            /* A single broken page must not take the reader down. */
+          } finally {
+            busyRef.current = false;
+          }
+        };
+
+        const io = new IntersectionObserver((entries) => {
+          const rootEl = root?.current;
+          const rootRect = (rootEl ?? document.documentElement).getBoundingClientRect();
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              paint();
+            } else if (paintedRef.current) {
+              // Far off-screen canvases are released again — a long comic keeps
+              // dozens of pages in memory otherwise.
+              const rect = entry.boundingClientRect;
+              const far = Math.max(rootRect.top - rect.bottom, rect.top - rootRect.bottom) > rootRect.height * 2;
+              if (far) {
+                paintedRef.current = false;
+                canvas.width = 1;
+                canvas.height = 1;
+                const holder = textRef.current;
+                if (holder) holder.textContent = '';
+              }
+            }
+          }
+        }, { root: root?.current ?? null, rootMargin: '600px 0px' });
+        io.observe(el);
+        return () => { cancelled = true; io.disconnect(); };
+      }, [pdf, num, scale]);
+
+      return e('div', {
+        className: 'bk-pdfpage', ref: wrapRef,
+        'data-page': num,
+        style: { width: width + 'px', height: height + 'px' },
+      },
+        e('canvas', { key: 'canvas', ref: canvasRef, style: { width: width + 'px', height: height + 'px' } }),
+        // Every child is keyed and the list keeps a fixed shape: an unkeyed text
+        // layer would be torn down (and its rendered text lost) the moment a
+        // highlight div appears beside it.
+        e('div', { key: 'wash', className: 'bk-pdf-hl-layer' },
+          ...(highlights ?? []).flatMap((mark) => (mark.rects ?? []).map((rect, i) => e('div', {
+            key: `${mark.id}:${i}`,
+            className: 'bk-pdf-hl',
+            style: {
+              left: `${rect[0] * 100}%`,
+              top: `${rect[1] * 100}%`,
+              width: `${rect[2] * 100}%`,
+              height: `${rect[3] * 100}%`,
+              background: mark.ink,
+            },
+          })))),
+        e('div', { key: 'text', className: 'bk-pdf-text', ref: textRef }),
+        marked && e('div', { key: 'ribbon', className: 'bk-pdf-ribbon', 'aria-hidden': 'true' }));
+    }
+
+    function PdfReader({ record, prefs, onBack, onProgress, marks, onMarkAdd, onMarkUpdate, onMarkRemove }) {
       const theme = themeOf(prefs.themeId);
       const { aiOpen, setAiOpen, aiClosing, requestClose } = useAiColumn();
-      const url = useMemo(
+      const [pdf, setPdf] = useState(null);
+      const [error, setError] = useState(null);
+      const [metrics, setMetrics] = useState([]);
+      const [outline, setOutline] = useState([]);
+      const [zoom, setZoom] = useState(1);
+      const [page, setPage] = useState(1);
+      const [hud, setHud] = useState(false);
+      const [viewW, setViewW] = useState(0);
+      // 目录 is a docked panel, not a popup: it stays open (and is remembered)
+      // until the 目录 button is pressed again.
+      const [tocOpen, setTocOpen] = useState(() => {
+        try { return localStorage.getItem(TOC_KEY) !== '0'; } catch { return true; }
+      });
+      const scrollRef = useRef(null);
+      const pageEls = useRef(new Map());
+      const hudTimer = useRef(null);
+      const hudRef = useRef(false);
+      const restoredRef = useRef(false);
+      const anchorRef = useRef(null);
+      const zoomRef = useRef(1);
+      const lastOffsetRef = useRef(0);
+      const askSeq = useRef(0);
+      const [aiAsk, setAiAsk] = useState(null);
+
+      // 100% = fit width; the zoom steps scale the page relative to that.
+      const fitScale = metrics.length && viewW
+        ? Math.max(0.2, (viewW - 24) / metrics[0].w)
+        : 1;
+      const scale = fitScale * zoom;
+      zoomRef.current = zoom;
+
+      // Fallback viewer: if pdf.js cannot take the file, the browser reader still can.
+      const fallbackUrl = useMemo(
         () => URL.createObjectURL(new Blob([record.data], { type: 'application/pdf' })),
         [record.id],
       );
-      useEffect(() => () => URL.revokeObjectURL(url), [url]);
+      useEffect(() => () => URL.revokeObjectURL(fallbackUrl), [fallbackUrl]);
+
+      useEffect(() => {
+        let alive = true;
+        let doc = null;
+        (async () => {
+          try {
+            const lib = await loadPdfjs();
+            doc = await lib.getDocument({ data: new Uint8Array(record.data).slice() }).promise;
+            const sizes = await Promise.all(Array.from({ length: doc.numPages }, async (_, i) => {
+              const p = await doc.getPage(i + 1);
+              const vp = p.getViewport({ scale: 1 });
+              return { w: vp.width, h: vp.height };
+            }));
+            const rows = await readPdfOutline(doc);
+            if (!alive) { try { doc.destroy(); } catch { /* ignore */ } return; }
+            setPdf(doc);
+            setMetrics(sizes);
+            setOutline(rows);
+          } catch (err) {
+            if (alive) setError(String(err?.message || err));
+          }
+        })();
+        return () => { alive = false; if (doc) { try { doc.destroy(); } catch { /* ignore */ } } };
+      }, [record.id]);
+
+      // Width of the pane drives the fit-width scale.
+      useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return undefined;
+        const ro = new ResizeObserver(() => setViewW(el.clientWidth));
+        ro.observe(el);
+        setViewW(el.clientWidth);
+        return () => ro.disconnect();
+      }, [pdf]);
+
+      const register = useCallback((num, el) => {
+        if (el) pageEls.current.set(num, el);
+        else pageEls.current.delete(num);
+      }, []);
+
+      const scrollToPage = useCallback((num, smooth = true) => {
+        const el = pageEls.current.get(num);
+        const root = scrollRef.current;
+        if (!el || !root) return;
+        const top = Math.max(0, el.offsetTop - 8);
+        if (smooth) root.scrollTo({ top, behavior: 'smooth' });
+        else root.scrollTop = top;
+      }, []);
+
+      /** Remember what is under the top edge of the pane, so a zoom step or a
+       *  panel toggle (both change the page width) does not throw the reader
+       *  somewhere else. */
+      const captureAnchor = useCallback(() => {
+        const root = scrollRef.current;
+        if (!root) return;
+        const y = root.scrollTop + 8;
+        for (let num = 1; num <= metrics.length; num += 1) {
+          const el = pageEls.current.get(num);
+          if (!el) continue;
+          if (el.offsetTop + el.offsetHeight > y) {
+            anchorRef.current = {
+              page: num,
+              frac: Math.min(1, Math.max(0, (y - el.offsetTop) / Math.max(1, el.offsetHeight))),
+            };
+            return;
+          }
+        }
+      }, [metrics.length]);
+
+      // After a scale change, put the anchored point back under the top edge.
+      useEffect(() => {
+        const anchor = anchorRef.current;
+        if (!anchor) return undefined;
+        anchorRef.current = null;
+        const frame = requestAnimationFrame(() => {
+          const el = pageEls.current.get(anchor.page);
+          const root = scrollRef.current;
+          if (!el || !root) return;
+          root.scrollTop = Math.max(0, el.offsetTop + anchor.frac * el.offsetHeight - 8);
+        });
+        return () => cancelAnimationFrame(frame);
+      }, [scale]);
+
+      // 记忆: reopen the book exactly where it was left (scroll ratio first, so a
+      // mid-page position survives; the page number is the fallback). The local
+      // copy wins because it is written on every page turn, even when the Host
+      // tears the panel down without letting the IndexedDB write land.
+      useEffect(() => {
+        if (restoredRef.current) return;
+        if (!metrics.length || !viewW) return;
+        restoredRef.current = true;
+        const local = readLocalPos(record.id);
+        const savedPage = Math.round(Number(local?.page ?? record.progress?.page) || 1);
+        const target = Math.min(Math.max(1, savedPage), metrics.length);
+        const savedOffset = Number(local?.offset ?? record.progress?.offset);
+        // No cleanup on purpose: the jump must land even if the pane re-measures
+        // in the next frame, otherwise the reader would snap back to page 1.
+        requestAnimationFrame(() => {
+          const root = scrollRef.current;
+          if (root && Number.isFinite(savedOffset) && savedOffset > 0) {
+            const span = Math.max(0, root.scrollHeight - root.clientHeight);
+            if (span > 0) {
+              root.scrollTop = Math.min(1, savedOffset) * span;
+              if (root.scrollTop > 4) return;
+            }
+          }
+          if (target > 1) scrollToPage(target, false);
+        });
+      }, [metrics, viewW, scrollToPage, record.progress?.page, record.progress?.offset, record.id]);
+
+      // Current page: the first page whose bottom edge is still below the top of the pane.
+      useEffect(() => {
+        const root = scrollRef.current;
+        if (!root) return undefined;
+        let raf = 0;
+        const update = () => {
+          raf = 0;
+          // A hidden pane (display:none) reports height 0 and resets scrollTop;
+          // reading a page out of that would overwrite the saved position.
+          if (!root.clientHeight) return;
+          const rect = root.getBoundingClientRect();
+          let cur = 1;
+          for (let num = 1; num <= metrics.length; num += 1) {
+            const el = pageEls.current.get(num);
+            if (el && el.getBoundingClientRect().bottom > rect.top + 24) { cur = num; break; }
+          }
+          setPage(cur);
+        };
+        const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+        root.addEventListener('scroll', onScroll, { passive: true });
+        update();
+        return () => {
+          root.removeEventListener('scroll', onScroll);
+          if (raf) cancelAnimationFrame(raf);
+        };
+      }, [metrics, zoom]);
+
+      // Persist the reading position (page + percent + exact scroll offset)
+      // whenever it settles, and once more if the tab goes away.
+      const progressRef = useRef({ page: 1, total: 0 });
+      progressRef.current = { page, total: metrics.length };
+      // How far down the document the pane is, as a 0..1 ratio. `null` when the
+      // pane cannot be measured (hidden or already detached) — callers must keep
+      // the previous value instead of writing 0.
+      const readOffset = useCallback(() => {
+        const root = scrollRef.current;
+        if (!root || !root.clientHeight) return null;
+        const span = Math.max(0, root.scrollHeight - root.clientHeight);
+        return span > 0 ? Math.min(1, Math.max(0, root.scrollTop / span)) : 0;
+      }, []);
+
+      const flushProgress = useCallback(() => {
+        if (!restoredRef.current) return; // never overwrite progress with a pre-restore page 1
+        const { page: at, total } = progressRef.current;
+        if (total <= 0) return;
+        const offset = readOffset();
+        if (offset != null) lastOffsetRef.current = offset;
+        // localStorage first: it is synchronous, so a Host that tears this panel
+        // down the instant the user clicks elsewhere still keeps the position.
+        writeLocalPos(record.id, { page: at, offset: lastOffsetRef.current });
+        if (onProgress) onProgress({ page: at, ratio: at / total, offset: lastOffsetRef.current });
+      }, [onProgress, record.id, readOffset]);
+
+      // Mirror the position locally on every page turn (cheap, synchronous).
+      useEffect(() => {
+        if (!restoredRef.current || !metrics.length) return;
+        const offset = readOffset();
+        if (offset == null) return;
+        lastOffsetRef.current = offset;
+        writeLocalPos(record.id, { page, offset });
+      }, [page, metrics.length, record.id, readOffset]);
+
+      useEffect(() => {
+        // Nothing is written before the saved position has been restored — a
+        // timer firing in between would record page 1 over the real progress.
+        if (!metrics.length || !restoredRef.current) return undefined;
+        const timer = setTimeout(flushProgress, 400);
+        return () => clearTimeout(timer);
+      }, [page, metrics.length, flushProgress]);
+      useEffect(() => () => flushProgress(), [flushProgress]);
+      useEffect(() => {
+        const onHide = () => flushProgress();
+        window.addEventListener('pagehide', onHide);
+        window.addEventListener('beforeunload', onHide);
+        document.addEventListener('visibilitychange', onHide);
+        return () => {
+          window.removeEventListener('pagehide', onHide);
+          window.removeEventListener('beforeunload', onHide);
+          document.removeEventListener('visibilitychange', onHide);
+        };
+      }, [flushProgress]);
+
+      const handleBack = useCallback(() => {
+        flushProgress();
+        onBack();
+      }, [flushProgress, onBack]);
+
+      // 书签 / 划线: the same marks store the EPUB side uses, keyed by page.
+      const bookmarks = useMemo(
+        () => (marks ?? []).filter((mark) => mark.kind === 'bookmark'),
+        [marks],
+      );
+      const highlights = useMemo(
+        () => (marks ?? []).filter((mark) => mark.kind === 'highlight'),
+        [marks],
+      );
+      const highlightsByPage = useMemo(() => {
+        const map = new Map();
+        for (const mark of highlights) {
+          const num = Math.round(Number(mark.page) || 0);
+          if (!num) continue;
+          const row = { id: mark.id, rects: mark.rects ?? [], ink: markInk(mark.color, prefs.themeId) };
+          const list = map.get(num);
+          if (list) list.push(row);
+          else map.set(num, [row]);
+        }
+        return map;
+      }, [highlights, prefs.themeId]);
+      const bookmarkedPages = useMemo(
+        () => new Set(bookmarks.map((mark) => Math.round(Number(mark.page) || 0))),
+        [bookmarks],
+      );
+      const bookmarkHere = bookmarks.find((mark) => Math.round(Number(mark.page) || 0) === page);
+      const toggleBookmarkAt = (num) => {
+        if (!onMarkAdd) return;
+        const found = bookmarks.find((mark) => Math.round(Number(mark.page) || 0) === num);
+        if (found) { onMarkRemove?.(found.id); return; }
+        onMarkAdd({
+          kind: 'bookmark', page: num, chapter: 0, color: 'yellow', text: '',
+          ratio: num / Math.max(1, metrics.length),
+        });
+        showHud();
+      };
+      const toggleBookmark = () => toggleBookmarkAt(page);
+
+      const hideHud = useCallback(() => {
+        if (hudTimer.current) { clearTimeout(hudTimer.current); hudTimer.current = null; }
+        hudRef.current = false;
+        setHud(false);
+      }, []);
+      const showHud = useCallback(() => {
+        hudRef.current = true;
+        setHud(true);
+        if (hudTimer.current) clearTimeout(hudTimer.current);
+        hudTimer.current = setTimeout(() => {
+          hudTimer.current = null;
+          hudRef.current = false;
+          setHud(false);
+        }, 2600);
+      }, []);
+      const toggleHud = useCallback(() => {
+        // Releasing a text selection must not be mistaken for a tap on the page.
+        const sel = window.getSelection?.();
+        if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+        if (hudRef.current) hideHud();
+        else showHud();
+      }, [hideHud, showHud]);
+
+      // Selecting text inside the pages floats the selection bar (复制 / 高亮 /
+      // 问 AI / 书签). ⌘/Ctrl+C keeps working too.
+      const [selBar, setSelBar] = useState(null);
+      useEffect(() => {
+        const onSelectionChange = () => {
+          const sel = window.getSelection?.();
+          const stage = scrollRef.current?.parentElement ?? null;
+          if (!sel || sel.isCollapsed || !sel.rangeCount || !stage) { setSelBar(null); return; }
+          const text = sel.toString().trim();
+          if (!text) { setSelBar(null); return; }
+          const range = sel.getRangeAt(0);
+          const node = range.startContainer;
+          const startEl = node.nodeType === 1 ? node : node.parentElement;
+          if (!startEl || !scrollRef.current?.contains(startEl)) { setSelBar(null); return; }
+          // The page the selection starts on; the wash is stored as fractions of
+          // that page so it stays glued to the text at any zoom.
+          const pageEl = startEl.closest?.('.bk-pdfpage') ?? null;
+          const pageRect = pageEl?.getBoundingClientRect();
+          const rects = pageRect
+            ? tidyRects([...range.getClientRects()]
+              .filter((r) => r.width > 1 && r.height > 1)
+              .map((r) => [
+                (r.left - pageRect.left) / pageRect.width,
+                (r.top - pageRect.top) / pageRect.height,
+                r.width / pageRect.width,
+                r.height / pageRect.height,
+              ])
+              .filter(([x, y, w, h]) => x > -0.02 && y > -0.02 && x + w < 1.02 && y + h < 1.02))
+            : [];
+          const box = range.getBoundingClientRect();
+          const host = stage.getBoundingClientRect();
+          setSelBar({
+            text,
+            page: Number(pageEl?.dataset.page) || page,
+            rects,
+            left: Math.min(Math.max(box.left - host.left + box.width / 2, 118), Math.max(118, host.width - 118)),
+            top: Math.max(10, box.top - host.top - 48),
+          });
+        };
+        document.addEventListener('selectionchange', onSelectionChange);
+        return () => document.removeEventListener('selectionchange', onSelectionChange);
+      }, [page]);
+
+      const clearSelection = () => {
+        window.getSelection?.()?.removeAllRanges();
+        setSelBar(null);
+      };
+
+      const copySelection = useCallback(async () => {
+        const text = selBar?.text;
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          // Older/blocked clipboard: fall back to a throwaway textarea.
+          const area = document.createElement('textarea');
+          area.value = text;
+          area.style.position = 'fixed';
+          area.style.opacity = '0';
+          document.body.appendChild(area);
+          area.select();
+          try { document.execCommand('copy'); } catch { /* ignore */ }
+          document.body.removeChild(area);
+        }
+        clearSelection();
+      }, [selBar]);
+
+      const highlightSelection = useCallback(() => {
+        if (!selBar || !onMarkAdd || selBar.rects.length === 0) return;
+        const pageMarks = highlights.filter((mark) => Math.round(Number(mark.page) || 0) === selBar.page);
+        const cover = pageMarks.flatMap((mark) => mark.rects ?? []);
+        const fresh = tidyRects(uncoveredRects(selBar.rects, cover));
+        // Same words, or a subset of what is already painted: nothing to do.
+        if (fresh.length === 0) { clearSelection(); return; }
+        // Otherwise this is an extension of the mark it overlaps most: the new
+        // strips are appended to that mark, so one selection stays one 划线.
+        let target = null;
+        let best = 0;
+        for (const mark of pageMarks) {
+          let area = 0;
+          for (const r of mark.rects ?? []) {
+            for (const n of selBar.rects) area += rectOverlapArea(n, r);
+          }
+          if (area > best) { best = area; target = mark; }
+        }
+        if (target) {
+          onMarkUpdate?.(target.id, {
+            rects: tidyRects([...(target.rects ?? []), ...fresh]),
+            text: selBar.text.length >= (target.text ?? '').length ? selBar.text : target.text,
+          });
+        } else {
+          onMarkAdd({
+            kind: 'highlight',
+            page: selBar.page,
+            rects: fresh,
+            text: selBar.text,
+            color: 'yellow',
+            chapter: 0,
+          });
+        }
+        clearSelection();
+      }, [selBar, onMarkAdd, onMarkUpdate, highlights]);
+
+      const askAboutSelection = useCallback(() => {
+        if (!selBar) return;
+        askSeq.current += 1;
+        setAiAsk({
+          prompt: explainPrompt(selBar.text),
+          query: selBar.text,
+          label: askBubbleLabel(selBar.text),
+          seq: askSeq.current,
+        });
+        clearSelection();
+        setAiOpen(true);
+      }, [selBar, setAiOpen]);
+      useEffect(() => () => { if (hudTimer.current) clearTimeout(hudTimer.current); }, []);
+
+      // Reveal the controls once on open so the contents / bookmark buttons are discoverable.
+      useEffect(() => { showHud(); }, [showHud]);
+
+      const stepZoom = useCallback((dir) => {
+        const cur = zoomRef.current;
+        const index = ZOOM_STEPS.findIndex((step) => step >= cur - 0.001);
+        const at = index === -1 ? ZOOM_STEPS.length - 1 : index;
+        const next = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, at + dir))];
+        captureAnchor();
+        setZoom(next);
+        showHud();
+      }, [captureAnchor, showHud]);
+
+      const resetZoom = useCallback(() => {
+        captureAnchor();
+        setZoom(1);
+        showHud();
+      }, [captureAnchor, showHud]);
+
+      // ⌘/Ctrl + wheel zooms like a desktop previewer (the page under the cursor
+      // stays put); a plain wheel keeps scrolling the document. Browsers deliver
+      // a pinch as a burst of small events, so steps are throttled.
+      const zoomAtRef = useRef(0);
+      useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return undefined;
+        const onWheel = (ev) => {
+          if (!(ev.ctrlKey || ev.metaKey)) return;
+          ev.preventDefault();
+          const now = Date.now();
+          if (now - zoomAtRef.current < 160) return;
+          zoomAtRef.current = now;
+          stepZoom(ev.deltaY < 0 ? 1 : -1);
+        };
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => el.removeEventListener('wheel', onWheel);
+      }, [stepZoom, pdf, error]);
+
+      const toggleToc = useCallback(() => {
+        captureAnchor();
+        setTocOpen((open) => {
+          const next = !open;
+          try { localStorage.setItem(TOC_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+          return next;
+        });
+        showHud();
+      }, [captureAnchor, showHud]);
+
       return e('div', {
         className: 'bk-reader',
         style: { background: theme.bg, color: theme.text, '--bk-paper': theme.bg, '--bk-bar': theme.bar, '--bk-barText': theme.barText, '--bk-barBorder': theme.barBorder, '--bk-muted': theme.muted, '--bk-accent': theme.accent ?? '#2f6f4f' },
       },
         e('div', { className: 'bk-reader-main' },
-          e('div', { className: 'bk-topbar', style: { position: 'static', flex: 'none' } },
-            e('button', { className: 'bk-barbtn', type: 'button', onClick: onBack },
-              e(Icon, { paths: ICON_BACK, size: 16 })),
-            e('span', { className: 'bk-bar-title' }, record.title),
-            e('span', { className: 'bk-bar-sub' }, t('shelf.pdf')),
+          e('div', { className: 'bk-reader-body' },
+            // 目录: a docked sidebar-style panel, persistent until toggled off.
+            tocOpen && !error && e(PdfTocPanel, {
+              pdf, outline, metrics, page, marks,
+              onClose: toggleToc,
+              onGoto: (num) => scrollToPage(num),
+              onRemoveMark: (id) => onMarkRemove?.(id),
+            }),
+            e('div', { className: 'bk-reader-stage' },
+              error
+                ? e('iframe', { className: 'bk-pdf', src: fallbackUrl, title: record.title })
+                : e('div', {
+                  className: 'bk-pdfview', ref: scrollRef,
+                  onMouseMove: showHud,
+                  onClick: toggleHud,
+                },
+                  e('div', { className: 'bk-pdfview-inner' },
+                    !pdf && !metrics.length && e('div', { className: 'bk-pdf-loading' }, t('reader.loading')),
+                    metrics.map((m, i) => e(PdfCanvasPage, {
+                      key: `${i + 1}:${scale.toFixed(4)}`,
+                      pdf,
+                      num: i + 1,
+                      scale,
+                      width: Math.round(m.w * scale),
+                      height: Math.round(m.h * scale),
+                      root: scrollRef,
+                      register,
+                      marked: bookmarkedPages.has(i + 1),
+                      highlights: highlightsByPage.get(i + 1),
+                    })))),
+              e('div', { className: `bk-pdf-bar bk-pdf-bar-left${hud ? ' on' : ''}` },
+                e('button', {
+                  className: 'bk-pdf-fab', type: 'button',
+                  'aria-label': t('reader.back'), title: t('reader.back'),
+                  onClick: (ev) => { ev.stopPropagation(); handleBack(); },
+                }, e(Icon, { paths: ICON_BACK, size: 16 })),
+                e('button', {
+                  className: `bk-pdf-fab${tocOpen ? ' bk-open' : ''}`, type: 'button',
+                  'aria-label': t('reader.toc'), title: t('reader.toc'),
+                  'aria-expanded': tocOpen ? 'true' : 'false',
+                  onClick: (ev) => { ev.stopPropagation(); toggleToc(); },
+                }, e(Icon, { paths: ICON_TOC, size: 16 })),
+                e('div', { className: 'bk-pdf-zoom' },
+                  e('button', {
+                    type: 'button', 'aria-label': t('reader.zoomOut'), title: t('reader.zoomOut'),
+                    onClick: (ev) => { ev.stopPropagation(); stepZoom(-1); },
+                  }, '−'),
+                  e('button', {
+                    type: 'button', className: 'bk-pdf-zoomval',
+                    'aria-label': t('reader.fitWidth'), title: t('reader.fitWidth'),
+                    onClick: (ev) => { ev.stopPropagation(); resetZoom(); },
+                  }, `${Math.round(zoom * 100)}%`),
+                  e('button', {
+                    type: 'button', 'aria-label': t('reader.zoomIn'), title: t('reader.zoomIn'),
+                    onClick: (ev) => { ev.stopPropagation(); stepZoom(1); },
+                  }, '+'),
+                ),
+              ),
+              e('div', { className: `bk-pdf-bar bk-pdf-bar-right${hud ? ' on' : ''}` },
+                e('button', {
+                  className: `bk-pdf-fab${bookmarkHere ? ' bk-on' : ''}`, type: 'button',
+                  'aria-label': bookmarkHere ? t('reader.bookmarkRemove') : t('reader.bookmarkAdd'),
+                  title: bookmarkHere ? t('reader.bookmarkRemove') : t('reader.bookmarkAdd'),
+                  onClick: (ev) => { ev.stopPropagation(); toggleBookmark(); },
+                }, e(Icon, {
+                  paths: ICON_BOOKMARK, size: 16,
+                  fillPaths: bookmarkHere ? ICON_BOOKMARK : [],
+                })),
+              ),
+              e('div', { className: `bk-pdf-hud${hud ? ' on' : ''}`, onClick: (ev) => ev.stopPropagation() },
+                e('span', { className: 'bk-pdf-pageno' }, `${page} / ${metrics.length}`),
+              ),
+              selBar && e('div', {
+                className: 'bk-pdf-selbar',
+                style: { left: `${selBar.left}px`, top: `${selBar.top}px` },
+                onMouseDown: (ev) => ev.preventDefault(),
+                onClick: (ev) => ev.stopPropagation(),
+              },
+                e('button', { type: 'button', onClick: copySelection }, t('reader.copy')),
+                e('button', {
+                  type: 'button',
+                  disabled: !selBar.rects.length || !onMarkAdd,
+                  onClick: highlightSelection,
+                }, t('reader.highlight')),
+                e('button', {
+                  type: 'button', className: 'bk-pdf-selbar-ai',
+                  onClick: askAboutSelection,
+                }, e(Icon, { paths: ICON_SPARK, size: 13, strokeWidth: 1.7 }), t('reader.askAi')),
+                e('span', { className: 'bk-pdf-selbar-sep' }),
+                e('button', {
+                  type: 'button',
+                  className: bookmarks.some((mark) => Math.round(Number(mark.page) || 0) === selBar.page) ? 'bk-on' : '',
+                  onClick: () => { toggleBookmarkAt(selBar.page); clearSelection(); },
+                }, t('reader.bookmark')),
+              ),
+              // Same reveal rule as the rest of the floating controls (and as the EPUB
+              // reader): the AI entry rides with the toolbar instead of floating alone.
+              hud && !aiOpen && e(AIBubble, { onClick: () => setAiOpen(true) }),
+            ),
           ),
-          e('iframe', { className: 'bk-pdf', src: url, title: record.title }),
-          !aiOpen && e(AIBubble, { onClick: () => setAiOpen(true) }),
         ),
         (aiOpen || aiClosing) && e(AIPanel, {
           record, chapter: 0, chapterTitle: t('shelf.pdf'),
           leaving: aiClosing,
+          ask: aiAsk,
+          onAskHandled: () => setAiAsk(null),
           onClose: requestClose,
         }),
       );
@@ -2558,7 +3616,11 @@ window.__ModuleLoader__.load({
       // Immersive reading by default: the top toolbar is hidden and a tap on the
       // reading surface reveals it (WeChat Read style); a second tap collapses it.
       const [menuOpen, setMenuOpen] = useState(false);
-      const [tocOpen, setTocOpen] = useState(false);
+      // 目录 is a docked panel (same behaviour as the PDF reader): remembered
+      // between sessions, toggled by the 目录 button, never closes on a jump.
+      const [tocOpen, setTocOpen] = useState(() => {
+        try { return localStorage.getItem(EPUB_TOC_KEY) === '1'; } catch { return false; }
+      });
       const [tocAnchor, setTocAnchor] = useState('');
       const [fontOpen, setFontOpen] = useState(false);
       const [themeOpen, setThemeOpen] = useState(false);
@@ -2567,7 +3629,6 @@ window.__ModuleLoader__.load({
       // 笔记 drawer, and the "jump to this mark" request.
       const [sel, setSel] = useState(null);
       const [draft, setDraft] = useState(null);
-      const [notesOpen, setNotesOpen] = useState(false);
       const [jumpTick, setJumpTick] = useState(0);
       const pendingJump = useRef(null);
       // 「问 AI」: one queued prompt for the AI column, consumed by the panel.
@@ -2642,10 +3703,20 @@ window.__ModuleLoader__.load({
         if (aiSlideTimer.current) clearTimeout(aiSlideTimer.current);
       }, []);
 
-      const setChapter = useCallback((index, fragment, ratio) => {
+      const setChapter = useCallback((index, fragment, ratio, label) => {
         const clamped = Math.min(Math.max(0, index), epub.chapters.length - 1);
         if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-        fragmentRef.current = fragment ? String(fragment) : '';
+        // Every fragment jump (same chapter or not) goes through the pending-jump
+        // machinery: it waits for the target to exist and for the layout to
+        // settle, then lands on it in whichever page mode is active. The old
+        // path fired two frames after the markup was set, which was too early
+        // for a long chapter — the anchor was still at its pre-layout position
+        // and the jump silently went nowhere.
+        pendingJump.current = fragment
+          ? { fragment: String(fragment), label: label ? String(label) : '' }
+          : null;
+        if (fragment) setJumpTick((n) => n + 1);
+        fragmentRef.current = '';
         // A selection and a half-written 想法 belong to the chapter they came
         // from; leaving them floating over a new chapter would be a lie.
         setSel(null);
@@ -2880,13 +3951,14 @@ window.__ModuleLoader__.load({
         return current;
       }, [epub, chapter]);
 
-      const openToc = useCallback(() => {
-        setTocAnchor(resolveCurrentAnchor());
+      const toggleToc = useCallback(() => {
+        const next = !tocOpen;
+        if (next) setTocAnchor(resolveCurrentAnchor());
+        setTocOpen(next);
         setFontOpen(false);
         setThemeOpen(false);
-        setNotesOpen(false);
-        setTocOpen(true);
-      }, [resolveCurrentAnchor]);
+        try { localStorage.setItem(EPUB_TOC_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+      }, [tocOpen, resolveCurrentAnchor]);
 
       const cancelTap = useCallback(() => {
         if (tapTimer.current) { clearTimeout(tapTimer.current); tapTimer.current = null; }
@@ -3102,7 +4174,6 @@ window.__ModuleLoader__.load({
       const gotoPosition = (mark) => {
         const index = Math.min(Math.max(0, mark.chapter ?? 0), epub.chapters.length - 1);
         const ratio = Math.min(1, Math.max(0, Number(mark.ratio) || 0));
-        setNotesOpen(false);
         if (index === chapterRef.current) {
           const scroller = scrollRef.current;
           if (paged && pageCount > 1) setPage(Math.round(ratio * (pageCount - 1)));
@@ -3114,14 +4185,15 @@ window.__ModuleLoader__.load({
       };
 
       const gotoMark = (mark) => {
-        setNotesOpen(false);
         pendingJump.current = { markId: mark.id };
         if (mark.chapter !== chapterRef.current) setChapter(mark.chapter);
         setJumpTick((n) => n + 1);
       };
 
-      // Land on a mark: scroll the pane (or turn to the page) once the chapter
-      // markup that holds it is actually in the DOM.
+      // Land on a mark (bookmark / highlight) or a 目录 fragment: wait until the
+      // target is in the DOM AND the layout has settled, then go there. A jump
+      // that lands on a page that has not been laid out yet lands nowhere, so
+      // the position is re-measured over a few frames before it is used.
       useEffect(() => {
         const want = pendingJump.current;
         if (!want || !html) return undefined;
@@ -3130,9 +4202,34 @@ window.__ModuleLoader__.load({
         if (!root || !scroller) return undefined;
         let raf = 0;
         let tries = 0;
+        const find = () => {
+          if (want.markId) return markNodes(root, want.markId)[0];
+          const esc = want.fragment.replace(/["\\]/g, '\\$&');
+          const byId = root.querySelector(`[id="${esc}"]`) ?? root.querySelector(`[name="${esc}"]`);
+          if (byId) return byId;
+          // Some books ship a TOC whose anchors do not survive into the markup:
+          // fall back to the heading that carries the same text.
+          if (!want.label) return undefined;
+          const needle = want.label.replace(/\s+/g, '').toLowerCase();
+          for (const node of root.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+            const text = (node.textContent ?? '').replace(/\s+/g, '').toLowerCase();
+            if (text && (text === needle || text.startsWith(needle) || needle.startsWith(text))) return node;
+          }
+          return undefined;
+        };
         const step = () => {
-          const node = markNodes(root, want.markId)[0];
+          const node = find();
           if (node) {
+            // The target exists; make sure its position is final before using it.
+            if (tries < 3) {
+              tries += 1;
+              raf = requestAnimationFrame(step);
+              return;
+            }
+            // Paged mode needs a measured column to compute the page index. If
+            // the pane has not been measured yet, keep the jump pending — the
+            // effect re-runs when the width arrives.
+            if (paged && !colW) return;
             pendingJump.current = null;
             const pane = scroller.getBoundingClientRect();
             const box = node.getBoundingClientRect();
@@ -3143,13 +4240,13 @@ window.__ModuleLoader__.load({
               const index = Math.round((box.left - origin) / pitch);
               setPage(Math.min(Math.max(0, index), Math.max(0, pageCount - 1)));
             } else {
-              scroller.scrollTop += box.top - pane.top - 48;
+              scroller.scrollTop = Math.max(0, box.top - pane.top + scroller.scrollTop - 48);
             }
-            flashMark(root, want.markId);
+            if (want.markId) flashMark(root, want.markId);
             return;
           }
           tries += 1;
-          if (tries < 45) raf = requestAnimationFrame(step);
+          if (tries < 90) raf = requestAnimationFrame(step);
           else pendingJump.current = null;
         };
         step();
@@ -3157,7 +4254,7 @@ window.__ModuleLoader__.load({
       }, [html, chapter, jumpTick, pageCount, colW, paged]);
 
       /** True for a pointer that started on chrome (bar, panels, drawer, lightbox). */
-      const onChrome = (target) => !!target?.closest?.('.bk-topbar,.bk-fontpanel,.bk-themepop,.bk-drawer,.bk-drawer-backdrop,.bk-lightbox,.bk-chapter-foot,.bk-aibubble,.bk-selbar,.bk-notepop');
+      const onChrome = (target) => !!target?.closest?.('.bk-topbar,.bk-fontpanel,.bk-themepop,.bk-drawer,.bk-drawer-backdrop,.bk-dock-panel,.bk-lightbox,.bk-chapter-foot,.bk-aibubble,.bk-selbar,.bk-notepop');
 
       const onPointerDownReader = (ev) => {
         swipeRef.current = { x: ev.clientX, y: ev.clientY, chrome: onChrome(ev.target) };
@@ -3288,81 +4385,74 @@ window.__ModuleLoader__.load({
           onWheel: onWheelReader,
           onDoubleClick: cancelTap,
         },
-          error
-            ? e('div', { className: 'bk-error' },
-              e('span', null, `${t('reader.failed')}: ${error}`),
-              e('button', { className: 'bk-import-btn', type: 'button', onClick: onBack }, t('reader.back')),
-            )
-            : e('div', {
-              className: `bk-reader-scroll${paged ? ' bk-paged' : ''}`, ref: scrollRef, onScroll,
-            },
-              html === '' && !error && e('div', { style: { padding: 48, textAlign: 'center', opacity: .6 } }, t('reader.loading')),
-              e('div', {
-                ref: contentRef,
-                className: `bk-content${paged ? ' bk-cols' : ''}`,
-                style: contentStyle,
-                dangerouslySetInnerHTML: { __html: html },
+          e('div', { className: 'bk-reader-body' },
+            tocOpen && !error && e(EpubTocPanel, {
+              epub, chapter, currentFragment: tocAnchor, marks, themeId: prefs.themeId,
+              bookmarked: !!bookmarkHere,
+              onClose: toggleToc,
+              onGoto: (index, fragment, label) => setChapter(index, fragment, undefined, label),
+              onGotoMark: gotoMark,
+              onToggleBookmark: toggleBookmark,
+              onRemove: onMarkRemove,
+              onEditNote: (mark) => openMarkNote(mark),
+            }),
+            e('div', { className: 'bk-reader-stage' },
+              error
+                ? e('div', { className: 'bk-error' },
+                  e('span', null, `${t('reader.failed')}: ${error}`),
+                  e('button', { className: 'bk-import-btn', type: 'button', onClick: onBack }, t('reader.back')),
+                )
+                : e('div', {
+                  className: `bk-reader-scroll${paged ? ' bk-paged' : ''}`, ref: scrollRef, onScroll,
+                },
+                  html === '' && !error && e('div', { style: { padding: 48, textAlign: 'center', opacity: .6 } }, t('reader.loading')),
+                  e('div', {
+                    ref: contentRef,
+                    className: `bk-content${paged ? ' bk-cols' : ''}`,
+                    style: contentStyle,
+                    dangerouslySetInnerHTML: { __html: html },
+                  }),
+                  !paged && html && e('div', { className: 'bk-chapter-foot', onClick: (ev) => ev.stopPropagation() },
+                    e('button', { type: 'button', disabled: chapter <= 0, onClick: () => setChapter(chapter - 1) }, t('reader.prev')),
+                    e('button', { type: 'button', disabled: chapter >= epub.chapters.length - 1, onClick: () => setChapter(chapter + 1) }, t('reader.next')),
+                  ),
+                ),
+              e(ReaderBar, {
+                title: record.title,
+                sub: epub.titles[chapter],
+                page: paged && pageCount > 1 ? `${page + 1} / ${pageCount}` : undefined,
+                hidden: !menuOpen,
+                tocOpen,
+                onBack,
+                onToc: toggleToc,
+                onSettings: () => { setFontOpen((v) => !v); setThemeOpen(false); },
+                onTheme: () => { setThemeOpen((v) => !v); setFontOpen(false); },
               }),
-              !paged && html && e('div', { className: 'bk-chapter-foot', onClick: (ev) => ev.stopPropagation() },
-                e('button', { type: 'button', disabled: chapter <= 0, onClick: () => setChapter(chapter - 1) }, t('reader.prev')),
-                e('button', { type: 'button', disabled: chapter >= epub.chapters.length - 1, onClick: () => setChapter(chapter + 1) }, t('reader.next')),
-              ),
+              fontOpen && e(FontPanel, { prefs, setPrefs: updatePrefs, onClose: () => setFontOpen(false) }),
+              themeOpen && e(ThemePopover, { prefs, setPrefs: updatePrefs, onClose: () => setThemeOpen(false) }),
+              sel && !draft && e(SelectionBar, {
+                sel, themeId: prefs.themeId,
+                onPick: addHighlight,
+                onNote: startNote,
+                onAsk: askAboutSelection,
+                onDelete: () => deleteDraft(sel.markId),
+              }),
+              draft && e(NotePopover, {
+                draft, themeId: prefs.themeId,
+                onSave: saveDraft,
+                onDelete: deleteDraft,
+                onClose: () => setDraft(null),
+              }),
+              lightbox && e(ImageLightbox, { src: lightbox, onClose: () => setLightbox(null) }),
+              menuOpen && !aiOpen && e(AIBubble, {
+                onClick: () => {
+                  setAiOpen(true);
+                  setFontOpen(false);
+                  setThemeOpen(false);
+                },
+              }),
             ),
-          e(ReaderBar, {
-            title: record.title,
-            sub: epub.titles[chapter],
-            page: paged && pageCount > 1 ? `${page + 1} / ${pageCount}` : undefined,
-            hidden: !menuOpen,
-            bookmarked: !!bookmarkHere,
-            onBack,
-            onToc: openToc,
-            onBookmark: toggleBookmark,
-            onNotes: () => {
-              setNotesOpen(true);
-              setTocOpen(false);
-              setFontOpen(false);
-              setThemeOpen(false);
-            },
-            onSettings: () => { setFontOpen((v) => !v); setThemeOpen(false); },
-            onTheme: () => { setThemeOpen((v) => !v); setFontOpen(false); },
-          }),
-          fontOpen && e(FontPanel, { prefs, setPrefs: updatePrefs, onClose: () => setFontOpen(false) }),
-          themeOpen && e(ThemePopover, { prefs, setPrefs: updatePrefs, onClose: () => setThemeOpen(false) }),
-          tocOpen && e(TocDrawer, {
-            epub, chapter, currentFragment: tocAnchor,
-            onClose: () => setTocOpen(false), onGoto: setChapter,
-          }),
-          notesOpen && e(NotesDrawer, {
-            marks,
-            titleOf: (index) => epub.titles?.[index] ?? t('reader.chapterN', { n: (index ?? 0) + 1 }),
-            themeId: prefs.themeId,
-            onClose: () => setNotesOpen(false),
-            onGoto: gotoPosition,
-            onGotoMark: gotoMark,
-            onRemove: onMarkRemove,
-            onEditNote: (mark) => { setNotesOpen(false); openMarkNote(mark); },
-          }),
-          sel && !draft && e(SelectionBar, {
-            sel, themeId: prefs.themeId,
-            onPick: addHighlight,
-            onNote: startNote,
-            onAsk: askAboutSelection,
-            onDelete: () => deleteDraft(sel.markId),
-          }),
-          draft && e(NotePopover, {
-            draft, themeId: prefs.themeId,
-            onSave: saveDraft,
-            onDelete: deleteDraft,
-            onClose: () => setDraft(null),
-          }),
-          lightbox && e(ImageLightbox, { src: lightbox, onClose: () => setLightbox(null) }),
-          menuOpen && !aiOpen && e(AIBubble, {
-            onClick: () => {
-              setAiOpen(true);
-              setFontOpen(false);
-              setThemeOpen(false);
-            },
-          }),
+          ),
         ),
         (aiOpen || aiClosing) && e(AIPanel, {
           record, epub, chapter,
@@ -3405,6 +4495,7 @@ window.__ModuleLoader__.load({
       const dbRef = useRef(null);
       const rootRef = useRef(null);
       const pdfCoverTried = useRef(new Set());
+      const readingRef = useRef({}); // bookId -> 阅读进度 / lastRead row
       const openBookId = open?.record?.id ?? null;
 
       // Every view change goes through here so the session memory and React
@@ -3451,12 +4542,17 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         let live = true;
-        openDb().then((db) => {
+        openDb().then(async (db) => {
           if (!live) return;
           dbRef.current = db;
-          return dbAll(db).then((rows) => {
-            if (live) setBooks(rows.sort((a, b) => (b.lastRead ?? b.addedAt ?? 0) - (a.lastRead ?? a.addedAt ?? 0)));
-          });
+          const [rows, states] = await Promise.all([dbAll(db), dbReadingAll(db).catch(() => [])]);
+          if (!live) return;
+          const map = {};
+          for (const state of states) map[state.bookId] = state;
+          readingRef.current = map;
+          setBooks(rows
+            .map((row) => withReadingState(row, map[row.id]))
+            .sort((a, b) => (b.lastRead ?? b.addedAt ?? 0) - (a.lastRead ?? a.addedAt ?? 0)));
         }).catch(() => { if (live) setBooks([]); });
         return () => { live = false; };
       }, []);
@@ -3471,8 +4567,16 @@ window.__ModuleLoader__.load({
 
       const refresh = useCallback(async () => {
         if (!dbRef.current) return;
-        const rows = await dbAll(dbRef.current);
-        setBooks(rows.sort((a, b) => (b.lastRead ?? b.addedAt ?? 0) - (a.lastRead ?? a.addedAt ?? 0)));
+        const [rows, states] = await Promise.all([
+          dbAll(dbRef.current),
+          dbReadingAll(dbRef.current).catch(() => []),
+        ]);
+        const map = {};
+        for (const state of states) map[state.bookId] = state;
+        readingRef.current = map;
+        setBooks(rows
+          .map((row) => withReadingState(row, map[row.id]))
+          .sort((a, b) => (b.lastRead ?? b.addedAt ?? 0) - (a.lastRead ?? a.addedAt ?? 0)));
       }, []);
 
       // 书签 / 划线 / 批注 of the open book. Reloaded whenever the open book
@@ -3581,8 +4685,12 @@ window.__ModuleLoader__.load({
         try {
           let db = dbRef.current;
           if (!db) { db = await openDb(); dbRef.current = db; }
-          const touched = { ...record, lastRead: Date.now() };
-          await dbPut(db, touched);
+          // 最近阅读 is a tiny row of its own — reopening a 300 MB PDF must not
+          // rewrite the file just to bump the timestamp.
+          const state = { ...(readingRef.current[record.id] ?? {}), bookId: record.id, lastRead: Date.now() };
+          readingRef.current = { ...readingRef.current, [record.id]: state };
+          dbPutReading(db, state).catch(() => {});
+          const touched = withReadingState(record, state);
           let epub = null;
           if (record.kind === 'epub') {
             epub = await parseEpub(record.data, (i) => t('reader.chapterN', { n: i + 1 }));
@@ -3600,7 +4708,9 @@ window.__ModuleLoader__.load({
         let db = dbRef.current;
         if (!db) { db = await openDb(); dbRef.current = db; }
         await dbDeleteBookMarks(db, record.id).catch(() => {});
+        await dbDeleteReading(db, record.id).catch(() => {});
         await dbDelete(db, record.id);
+        delete readingRef.current[record.id];
         await refresh();
       }, [refresh]);
 
@@ -3610,8 +4720,17 @@ window.__ModuleLoader__.load({
         // React state left to update.
         const current = sessionMemory.open;
         if (!current) return;
-        const record = { ...current.record, progress: { ...current.record.progress, ...progressPatch } };
-        if (dbRef.current) dbPut(dbRef.current, record).catch(() => { });
+        const bookId = current.record.id;
+        const state = {
+          ...(readingRef.current[bookId] ?? {}),
+          bookId,
+          ...progressPatch,
+          lastRead: Date.now(),
+          updatedAt: Date.now(),
+        };
+        readingRef.current = { ...readingRef.current, [bookId]: state };
+        const record = withReadingState(current.record, state);
+        if (dbRef.current) dbPutReading(dbRef.current, state).catch(() => { });
         sessionMemory.open = { ...current, record };
         setOpen((prev) => (prev ? sessionMemory.open : prev));
       }, []);
@@ -3640,7 +4759,14 @@ window.__ModuleLoader__.load({
       return e('div', { className: 'bk-root', ref: rootRef },
         STYLE_NODE(),
         open.record.kind === 'pdf' || !open.epub
-          ? e(PdfReader, { record: open.record, prefs, onBack: closeBook })
+          ? e(PdfReader, {
+            key: open.record.id,
+            record: open.record, prefs, onBack: closeBook, onProgress: saveProgress,
+            marks,
+            onMarkAdd: addMark,
+            onMarkUpdate: updateMark,
+            onMarkRemove: removeMark,
+          })
           : e(EpubReader, {
             record: open.record, epub: open.epub, prefs, setPrefs,
             onBack: closeBook, onProgress: saveProgress,
