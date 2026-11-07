@@ -57,6 +57,7 @@ window.__ModuleLoader__.load({
       'reader.fontSystem': '本机字体',
       'reader.fontSearch': '搜索字体名…',
       'reader.fontCount': '本机共 {n} 个字体',
+      'reader.fontFallback': '已列出 {n} 个常见字体（重启应用后可读取完整列表）',
       'reader.fontScanning': '正在读取本机字体…',
       'reader.fontScanFailed': '读取本机字体失败，可直接手动输入字体名',
       'reader.fontRefresh': '重新扫描',
@@ -171,6 +172,7 @@ window.__ModuleLoader__.load({
       'reader.fontSystem': 'Installed fonts',
       'reader.fontSearch': 'Search a font name…',
       'reader.fontCount': '{n} fonts on this computer',
+      'reader.fontFallback': '{n} common fonts listed — restart the app for the full list',
       'reader.fontScanning': 'Reading the installed fonts…',
       'reader.fontScanFailed': 'Could not read the installed fonts — type a font name instead',
       'reader.fontRefresh': 'Scan again',
@@ -2590,16 +2592,535 @@ window.__ModuleLoader__.load({
      * families the renderer can really draw, measured rather than assumed:
      * a family that is not installed falls back to the next one in the stack,
      * so both measurements stay equal — an installed one does not.
+     *
+     * The Host half of a plugin is loaded when the app starts, so a freshly
+     * installed plugin has no font route yet. The picker therefore keeps a
+     * list of the families every platform is likely to have, probes those as
+     * well, and shows them until the Host answers.
      * ------------------------------------------------------------------ */
     const FONTS_PATH = '/api/bookshelf/fonts';
     const FONTS_CACHE_KEY = 'bookshelf.fonts';
     const FONTS_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
+
+    /** Families worth offering before the Host reports anything. */
+    const COMMON_FONT_NAMES = `
+Arial
+Arial Black
+Arial Narrow
+Arial Rounded MT Bold
+Avenir
+Avenir Next
+Avenir Next Condensed
+American Typewriter
+Apple Chancery
+Apple Color Emoji
+Apple Symbols
+Arial Unicode MS
+Baskerville
+Bodoni 72
+Bradley Hand
+Chalkboard SE
+Chalkduster
+Cochin
+Comic Sans MS
+Copperplate
+Copperplate Gothic
+Courier
+Courier New
+Didot
+Futura
+Geneva
+Georgia
+Gill Sans
+Helvetica
+Helvetica Neue
+Hoefler Text
+Impact
+Iowan Old Style
+Kefa
+Marker Felt
+Menlo
+Monaco
+Optima
+Palatino
+Papyrus
+Phosphate
+Rockwell
+Savoye LET
+Seravek
+Skia
+Snell Roundhand
+Superclarendon
+Symbol
+Tahoma
+Thonburi
+Times
+Times New Roman
+Trattatello
+Trebuchet MS
+Verdana
+Zapfino
+Apple LiGothic
+Apple SD Gothic Neo
+Baoli SC
+Baoli TC
+Hannotate SC
+Hannotate TC
+HanziPen SC
+HanziPen TC
+Hiragino Maru Gothic ProN
+Hiragino Mincho ProN
+Hiragino Sans
+Hiragino Sans GB
+Heiti SC
+Heiti TC
+Kaiti SC
+Kaiti TC
+Lantinghei SC
+Lantinghei TC
+Libian SC
+STFangsong
+STHeiti
+STKaiti
+STSong
+Songti SC
+Songti TC
+Wawati SC
+Wawati TC
+Weibei SC
+Weibei TC
+Xingkai SC
+Xingkai TC
+Yuanti SC
+Yuanti TC
+YuGothic
+PingFang SC
+PingFang TC
+PingFang HK
+Calibri
+Cambria
+Candara
+Constantia
+Corbel
+Consolas
+Ebrima
+Franklin Gothic Medium
+Gabriola
+Gadugi
+Leelawadee UI
+Lucida Console
+Lucida Sans Unicode
+Microsoft JhengHei
+Microsoft Sans Serif
+Microsoft YaHei
+MS Gothic
+MS Mincho
+MS PGothic
+MS P明朝
+MS Sans Serif
+MS Serif
+Segoe UI
+Segoe UI Emoji
+Segoe UI Historic
+Segoe UI Symbol
+SimHei
+SimSun
+NSimSun
+FangSong
+FangSong_GB2312
+KaiTi
+KaiTi_GB2312
+DengXian
+DengXian Light
+Microsoft JhengHei UI
+MingLiU
+PMingLiU
+BiauKai
+DFKai-SB
+LiSong Pro
+LiHei Pro
+Hiragino Sans CNS
+Yu Gothic
+等线
+等线 Light
+仿宋
+仿宋_GB2312
+黑体
+楷体
+楷体_GB2312
+宋体
+新宋体
+微软雅黑
+微软雅黑 Light
+隶书
+华文彩云
+华文仿宋
+华文琥珀
+华文楷体
+华文细黑
+华文行楷
+华文新魏
+华文隶书
+霞鹜文楷
+霞鹜文楷等宽
+霞鹜文楷等宽 Light
+霞鹜文楷屏幕阅读版
+霞鹜文楷 Light
+霞鹜文楷 Medium
+霞鹜尚智黑
+霞鹜新晰黑
+霞鹜新晰黑 Pro
+霞鹜美泉黑
+LXGW WenKai
+LXGW WenKai Screen
+LXGW WenKai Mono
+LXGW WenKai TC
+LXGW Fasmart Gothic
+LXGW Neo XiHei
+LXGW Marker Gothic
+思源宋体
+思源宋体 CN
+思源黑体
+思源黑体 CN
+Source Han Serif SC
+Source Han Serif CN
+Source Han Sans SC
+Source Han Sans CN
+Noto Sans SC
+Noto Sans CJK SC
+Noto Serif SC
+Noto Serif CJK SC
+Noto Sans Mono CJK SC
+Noto Sans TC
+Noto Serif TC
+Noto Sans JP
+Noto Serif JP
+Noto Sans KR
+Noto Serif KR
+Noto Sans
+Noto Serif
+Noto Sans Mono
+Noto Serif Display
+Noto Serif Text
+Noto Color Emoji
+Sarasa Gothic SC
+Sarasa Mono SC
+Sarasa Mono NF CN
+Sarasa UI SC
+Sarasa UI JP
+Smiley Sans
+得意黑
+HarmonyOS Sans SC
+HarmonyOS Sans
+MiSans
+Alibaba PuHuiTi
+阿里巴巴普惠体
+阿里巴巴普惠体 2.0
+汉仪尚巍手书
+汉仪旗黑
+汉仪细等线
+汉仪润圆
+汉仪魏碑
+汉仪颜楷
+方正书宋
+方正兰亭黑
+方正兰亭纤黑
+方正姚体
+方正清刻本悦宋
+方正仿宋
+方正像素
+方正字迹
+全字库正楷体
+正黑
+justfont
+字由
+思源黑体 Mono
+得意黑 Mono
+DejaVu Sans
+DejaVu Sans Mono
+DejaVu Serif
+Liberation Mono
+Liberation Sans
+Liberation Serif
+Ubuntu
+Ubuntu Condensed
+Ubuntu Mono
+Cantarell
+Cascadia Code
+Cascadia Mono
+Cascadia Mono SemiBold
+Cascadia Mono Light
+JetBrains Mono
+JetBrains Mono NL
+Fira Code
+Fira Mono
+Fira Sans
+Source Code Pro
+Source Sans Pro
+Source Serif Pro
+IBM Plex Mono
+IBM Plex Sans
+IBM Plex Serif
+Iosevka
+Iosevka Term
+Hack
+Maple Mono
+Maple Mono NF CN
+Maple Mono Normal NF CN
+MesloLGS NF
+MesloLGS NF Mono
+Cousine
+Inconsolata
+Anonymous Pro
+Sarasa Mono
+Inter
+Roboto
+Open Sans
+Lato
+Montserrat
+Work Sans
+Playfair Display
+Crimson Text
+EB Garamond
+Libre Baskerville
+Space Mono
+Space Grotesk
+AR PL UMing
+AR PL UKai
+WenQuanYi Micro Hei
+WenQuanYi Zen Hei
+BiauKaiTC
+BiauKaiHK
+Chenyuluoyan
+SimSong
+乐米蜡笔体
+Libian TC
+LingWai TC
+LingWai SC
+PingFang MO
+Apple LiSung
+Yuppy TC
+Yuppy SC
+Academy Engraved LET
+Al Bayan
+Al Nile
+Al Tarikh
+Andale Mono
+Anonymous Pro for Powerline
+Apple Braille
+AppleGothic
+AppleMyungjo
+Arial Hebrew
+Arial Hebrew Scholar
+Arimo for Powerline
+Ayuthaya
+Baghdad
+Bangla MN
+Bangla Sangam MN
+Beirut
+Big Caslon
+BIZ UDGothic
+BIZ UDMincho
+BM Dohyeon
+BM Hanna 11yrs Old
+BM Hanna Air
+BM Hanna Pro
+BM Jua
+BM Kirang Haerang
+BM Yeonsung
+Bodoni 72 Oldstyle
+Bodoni 72 Smallcaps
+Bodoni Ornaments
+Brush Script MT
+Chalkboard
+Charter
+Corsiva Hebrew
+Cousine for Powerline
+Damascus
+DecoType Naskh
+DejaVu Sans Mono for Powerline
+Devanagari MT
+Devanagari Sangam MN
+DIN Alternate
+DIN Condensed
+Diwan Kufi
+Diwan Thuluth
+Droid Sans Mono Dotted for Powerline
+Droid Sans Mono for Powerline
+Droid Sans Mono Slashed for Powerline
+Euphemia UCAS
+Farah
+Farisi
+Fira Mono for Powerline
+Galvji
+GB18030 Bitmap
+Geeza Pro
+Go Mono for Powerline
+Grantha Sangam MN
+Gujarati MT
+Gujarati Sangam MN
+GungSeo
+Gurmukhi MN
+Gurmukhi MT
+Gurmukhi Sangam MN
+HeadLineA
+Hei
+Herculanum
+IBM 3270
+IBM 3270 Narrow
+IBM 3270 Semi-Narrow
+InaiMathi
+Inconsolata for Powerline
+Inconsolata-dz for Powerline
+Inconsolata-g for Powerline
+ITF Devanagari
+ITF Devanagari Marathi
+JetBrains Maple Mono
+JetBrainsMono Nerd Font
+JetBrainsMono Nerd Font Mono
+JetBrainsMono Nerd Font Propo
+JetBrainsMonoNL Nerd Font
+JetBrainsMonoNL Nerd Font Mono
+JetBrainsMonoNL Nerd Font Propo
+Kai
+Kailasa
+Kannada MN
+Kannada Sangam MN
+Kefa III
+Khmer MN
+Khmer Sangam MN
+Kingsoft Phonetic Plain
+Klee
+Kohinoor Bangla
+Kohinoor Devanagari
+Kohinoor Gujarati
+Kohinoor Telugu
+Kokonor
+Krungthep
+KufiStandardGK
+Lao MN
+Lao Sangam MN
+Liberation Mono for Powerline
+Lucida Grande
+Luminari
+Malayalam MN
+Malayalam Sangam MN
+Meslo LG L DZ for Powerline
+Meslo LG L for Powerline
+Meslo LG M DZ for Powerline
+Meslo LG M for Powerline
+Meslo LG S DZ for Powerline
+Meslo LG S for Powerline
+MesloLGL Nerd Font
+MesloLGL Nerd Font Mono
+MesloLGL Nerd Font Propo
+MesloLGLDZ Nerd Font
+MesloLGLDZ Nerd Font Mono
+MesloLGLDZ Nerd Font Propo
+MesloLGM Nerd Font
+MesloLGM Nerd Font Mono
+MesloLGM Nerd Font Propo
+MesloLGMDZ Nerd Font
+MesloLGMDZ Nerd Font Mono
+MesloLGMDZ Nerd Font Propo
+MesloLGS Nerd Font
+MesloLGS Nerd Font Mono
+MesloLGS Nerd Font Propo
+MesloLGSDZ Nerd Font
+MesloLGSDZ Nerd Font Mono
+MesloLGSDZ Nerd Font Propo
+Mishafi
+Mishafi Gold
+monofur for Powerline
+Mshtakan
+Mukta Mahee
+Muna
+Myanmar MN
+Myanmar Sangam MN
+Nadeem
+Nanum Brush Script
+Nanum Gothic
+Nanum Myeongjo
+Nanum Pen Script
+New Peninim MT
+Noteworthy
+Noto Mono for Powerline
+Noto Nastaliq Urdu
+Noto Sans Kannada
+Noto Sans Oriya
+Noto Sans Sunuwar
+Noto Serif Myanmar
+NovaMono for Powerline
+Oriya MN
+Oriya Sangam MN
+Osaka
+Party LET
+PCMyungjo
+PilGi
+Plantagenet Cherokee
+ProFont for Powerline
+PT Mono
+PT Sans
+PT Sans Caption
+PT Sans Narrow
+PT Serif
+PT Serif Caption
+Raanana
+Roboto Mono for Powerline
+Roboto Mono Light for Powerline
+Roboto Mono Medium for Powerline
+Roboto Mono Thin for Powerline
+Sana
+Sathu
+SF Mono
+Shree Devanagari 714
+SignPainter
+Silom
+Sinhala MN
+Sinhala Sangam MN
+Source Code Pro for Powerline
+Space Mono for Powerline
+Spot Mono
+STIX Two Math
+STIX Two Text
+Sukhumvit Set
+Symbol Neu for Powerline
+Tamil MN
+Tamil Sangam MN
+Telugu MN
+Telugu Sangam MN
+Tinos for Powerline
+Toppan Bunkyu Gothic
+Toppan Bunkyu Midashi Gothic
+Toppan Bunkyu Midashi Mincho
+Toppan Bunkyu Mincho
+Tsukushi A Round Gothic
+Tsukushi B Round Gothic
+Ubuntu Mono derivative Powerline
+Waseem
+Webdings
+Wingdings
+Wingdings 2
+Wingdings 3
+YuKyokasho
+YuKyokasho Yoko
+YuMincho
+YuMincho +36p Kana
+Zapf Dingbats
+Noto Sans Batak
+Noto Sans NKo
+Noto Sans Syriac
+Noto Sans Tagalog
+`.trim().split('\n').map((name) => name.trim()).filter(Boolean);
 
     /** The last scan, so the panel opens with the list already in it. */
     function loadFontCache() {
       try {
         const raw = JSON.parse(localStorage.getItem(FONTS_CACHE_KEY) ?? 'null');
         if (!raw || !Array.isArray(raw.fonts)) return null;
+        // An empty list means the last scan found nothing — treat it as no
+        // cache at all, or the picker would stay empty for a whole week.
+        if (raw.fonts.length === 0) return null;
         if (!Number.isFinite(raw.at) || Date.now() - raw.at > FONTS_CACHE_MS) return null;
         return raw.fonts;
       } catch {
@@ -2609,6 +3130,10 @@ window.__ModuleLoader__.load({
 
     function saveFontCache(fonts) {
       try { localStorage.setItem(FONTS_CACHE_KEY, JSON.stringify({ at: Date.now(), fonts })); } catch { /* ignore */ }
+    }
+
+    function clearFontCache() {
+      try { localStorage.removeItem(FONTS_CACHE_KEY); } catch { /* ignore */ }
     }
 
     /** The families the renderer can really draw. */
@@ -2645,6 +3170,15 @@ window.__ModuleLoader__.load({
       const usable = usableFonts(names);
       saveFontCache(usable);
       return usable;
+    }
+
+    /**
+     * The families to offer when the Host cannot be asked: the common ones,
+     * probed in this renderer. A plugin installed while the app runs has no
+     * font route yet, and a half-empty picker is worse than a curated one.
+     */
+    function commonFonts() {
+      return usableFonts(COMMON_FONT_NAMES);
     }
 
     /** A family name as CSS wants it: quoted, because most of them have a space. */
@@ -2741,6 +3275,8 @@ window.__ModuleLoader__.load({
         prefs.colWidth > 0 ? `${prefs.colWidth} px` : t('reader.colFill'));
       // 本机字体: the list is fetched once (the Host caches the scan) and kept in
       // localStorage, so reopening the panel shows the fonts right away.
+      // When the Host has no font route yet — a plugin installed while the app
+      // runs — the common families are probed instead, so the picker still works.
       const scanFonts = useCallback((force) => {
         setFontState('loading');
         fetchSystemFonts()
@@ -2749,8 +3285,9 @@ window.__ModuleLoader__.load({
             setFontState('ready');
           })
           .catch(() => {
-            setFontState('failed');
-            if (force) saveFontCache([]);
+            setSystemFonts(commonFonts());
+            setFontState('fallback');
+            if (force) clearFontCache();
           });
       }, []);
       useEffect(() => {
@@ -2781,7 +3318,7 @@ window.__ModuleLoader__.load({
         ),
         e('div', { className: 'bk-fontpick-status' },
           fontState === 'loading' ? t('reader.fontScanning')
-            : fontState === 'failed' ? t('reader.fontScanFailed')
+            : fontState === 'fallback' ? t('reader.fontFallback', { n: shownFonts.length })
               : t('reader.fontCount', { n: shownFonts.length })),
         shownFonts.length === 0
           ? e('div', { className: 'bk-fontpick-empty' }, t('reader.fontNone'))
