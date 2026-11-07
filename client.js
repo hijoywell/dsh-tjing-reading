@@ -571,7 +571,7 @@ window.__ModuleLoader__.load({
     const EPUB_TOC_KEY = 'bookshelf.epubToc';
     // Bump this on every client change: it shows up in the panel header so a
     // stale bundle in the browser is obvious.
-    const BUILD = 'r23';
+    const BUILD = 'r24';
     // The reading position is mirrored in localStorage on every page turn. It is
     // synchronous, survives a module reload and does not depend on the Host
     // keeping this panel mounted — the IndexedDB row is the slower copy.
@@ -2464,18 +2464,17 @@ window.__ModuleLoader__.load({
       };
 
       // A group that lost its last book still exists, but a filter pointing at a
-      // group that was just deleted must fall back to 全部.
+      // group that was just deleted must fall back to showing everything.
       useEffect(() => {
-        if (filter === 'all' || filter === 'epub' || filter === 'pdf') return;
+        if (filter === 'all') return;
         if (!groups.some((g) => g.id === filter)) setFilter('all');
       }, [groups, filter]);
 
+      /** How many books sit in each group; the chip shows it. */
       const counts = useMemo(() => {
-        const out = { all: books.length, epub: 0, pdf: 0 };
+        const out = {};
         for (const group of groups) out[group.id] = 0;
         for (const record of books) {
-          const kind = record.kind === 'pdf' ? 'pdf' : 'epub';
-          out[kind] += 1;
           const gid = bookGroups[record.id];
           if (gid && out[gid] !== undefined) out[gid] += 1;
         }
@@ -2484,8 +2483,6 @@ window.__ModuleLoader__.load({
 
       const shown = useMemo(() => {
         if (filter === 'all') return books;
-        if (filter === 'epub') return books.filter((b) => b.kind !== 'pdf');
-        if (filter === 'pdf') return books.filter((b) => b.kind === 'pdf');
         return books.filter((b) => bookGroups[b.id] === filter);
       }, [books, bookGroups, filter]);
 
@@ -2538,25 +2535,32 @@ window.__ModuleLoader__.load({
         setConfirmDelete(null);
       }, []);
 
+      // A group chip is a toggle: tapping the active one goes back to 全部.
+      // There is no 全部 chip — with no filter the shelf simply shows everything,
+      // and the format split already lives in the section headers.
       const chip = (id, label, count) => e('button', {
         key: id, type: 'button',
         className: `bk-chip${filter === id ? ' bk-on' : ''}`,
-        onClick: () => setFilter(id),
+        onClick: () => setFilter((prev) => (prev === id ? 'all' : id)),
       }, label, e('span', { className: 'bk-chip-n' }, String(count)));
 
       const activeGroup = groups.find((g) => g.id === filter);
       const filterBar = books.length === 0 ? null : e('div', { className: 'bk-filters' },
         e('div', { className: 'bk-filters-row' },
-          chip('all', t('shelf.all'), counts.all),
-          ...groups.map((group) => chip(group.id, group.name, counts[group.id] ?? 0)),
-          // 格式 chips come last: they are the automatic axis, not the curated one.
-          books.some((b) => b.kind !== 'pdf') && chip('epub', t('shelf.epub'), counts.epub),
-          books.some((b) => b.kind === 'pdf') && chip('pdf', 'PDF', counts.pdf),
-          e('button', {
-            className: 'bk-chip bk-chip-add', type: 'button', title: t('shelf.newGroup'),
-            'aria-label': t('shelf.newGroup'),
-            onClick: () => setEditing({ name: '' }),
-          }, e(Icon, { paths: ICON_PLUS, size: 14 })),
+          groups.length === 0
+            // No groups yet: one quiet button instead of an empty strip.
+            ? e('button', {
+              className: 'bk-chip bk-chip-add', type: 'button',
+              onClick: () => setEditing({ name: '' }),
+            }, e(Icon, { paths: ICON_PLUS, size: 14 }), t('shelf.newGroup'))
+            : [
+              ...groups.map((group) => chip(group.id, group.name, counts[group.id] ?? 0)),
+              e('button', {
+                key: 'add', className: 'bk-chip bk-chip-add', type: 'button',
+                title: t('shelf.newGroup'), 'aria-label': t('shelf.newGroup'),
+                onClick: () => setEditing({ name: '' }),
+              }, e(Icon, { paths: ICON_PLUS, size: 14 })),
+            ],
           activeGroup && e('span', { className: 'bk-filters-spacer' }),
           activeGroup && e('button', {
             className: 'bk-chip bk-chip-act', type: 'button', title: t('shelf.renameGroup'),
