@@ -334,6 +334,254 @@ async function handleModels(ctx, options) {
   return jsonResponse({ models, current: current ?? null });
 }
 
+/* -------------------------------------------------------------------------- *
+ * System fonts.
+ *
+ * The 「自定义」 picker in the reader lets the reader pick from the fonts this
+ * computer actually has. Two sources are merged:
+ *
+ *   1. a scan of the font folders — works on every platform and also yields
+ *      the localized family names (宋体-简), which CSS accepts;
+ *   2. on macOS, the family list AppKit reports — it also knows the fonts
+ *      macOS keeps outside the font folders (PingFang SC lives in
+ *      /System/Library/AssetsV2), so the list matches what the renderer can
+ *      really draw.
+ *
+ * The browser keeps its own copy and filters the list by probing the
+ * renderer, so the Host only has to report what is installed.
+ * -------------------------------------------------------------------------- */
+const FONTS_PATH = '/api/bookshelf/fonts';
+const FONT_CACHE_MS = 6 * 60 * 60 * 1000;
+const FONT_EXTENSIONS = new Set(['.ttf', '.otf', '.ttc', '.otc']);
+/** macOS script: every family AppKit knows, one per line. */
+const MAC_FONT_SCRIPT = [
+  'ObjC.import("AppKit");',
+  'ObjC.import("Foundation");',
+  'var mgr = $.NSFontManager.sharedFontManager;',
+  'var fams = mgr.availableFontFamilies;',
+  'var list = fams.js ? fams.js.map(function(x){return ObjC.unwrap(x)}) : [];',
+  'console.log(list.join("\\n"));',
+].join('\n');
+
+/** Folders that hold installed fonts on this platform. */
+function fontDirectories(join, homedir, platform) {
+  if (platform === 'darwin') {
+    return [
+      '/System/Library/Fonts',
+      '/Library/Fonts',
+      join(homedir, 'Library/Fonts'),
+      '/Network/Library/Fonts',
+    ];
+  }
+  if (platform === 'win32') {
+    const win = process.env.SystemRoot ?? 'C:\\Windows';
+    return [join(win, 'Fonts'), join(homedir, 'AppData/Local/Microsoft/Windows/Fonts')];
+  }
+  return [
+    '/usr/share/fonts',
+    '/usr/local/share/fonts',
+    join(homedir, '.fonts'),
+    join(homedir, '.local/share/fonts'),
+  ];
+}
+
+/** Every font file below a directory, depth-limited so a deep tree cannot stall the scan. */
+function collectFontFiles(fs, dir, depth, out) {
+  if (depth > 5) return out;
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const entry of entries) {
+    const full = dir + '/' + entry.name;
+    if (entry.isDirectory()) collectFontFiles(fs, full, depth + 1, out);
+    else if (entry.isFile() && FONT_EXTENSIONS.has(extnameOf(entry.name))) out.push(full);
+  }
+  return out;
+}
+
+/** Lower-case extension of a file name, dot included. */
+function extnameOf(name) {
+  const at = name.lastIndexOf('.');
+  return at === -1 ? '' : name.slice(at).toLowerCase();
+}
+
+/** Decode one `name` table string: Windows/Unicode records are UTF-16BE, Mac records are single byte. */
+function decodeNameString(buf, start, len, platformID) {
+  if (platformID === 1) return buf.toString('latin1', start, start + len);
+  let out = '';
+  for (let i = 0; i + 1 < len; i += 2) out += String.fromCharCode(buf.readUInt16BE(start + i));
+  return out;
+}
+
+/**
+ * The family names inside one font file.
+ *
+ * Only the `name` table is read, and only the header plus that table are
+ * loaded from disk — a CJK font is tens of megabytes, but its name table is a
+ * few kilobytes. nameID 16 (typographic family) wins over nameID 1 (legacy
+ * family), and the localized variants are kept as extra names because CSS
+ * accepts them too (宋体-简 works next to Songti SC).
+ */
+function readFontFamilies(fs, file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+  } catch {
+    return [];
+  }
+  try {
+    const head = Buffer.alloc(8192);
+    const headLen = fs.readSync(fd, head, 0, 8192, 0);
+    if (headLen < 12) return [];
+    // A collection (.ttc) holds several faces; each one has its own tables.
+    let offsets = [0];
+    if (head.toString('latin1', 0, 4) === 'ttcf') {
+      const count = head.readUInt32BE(8);
+      for (let i = 0; i < count && 12 + 4 * i + 4 <= headLen; i++) offsets.push(head.readUInt32BE(12 + 4 * i));
+    }
+    const records = [];
+    for (const base of offsets) {
+      if (base + 12 > headLen) continue;
+      const numTables = head.readUInt16BE(base + 4);
+      let nameOffset = -1;
+      let nameLength = 0;
+      for (let i = 0; i < numTables; i++) {
+        const rec = base + 12 + 16 * i;
+        if (rec + 16 > headLen) break;
+        if (head.toString('latin1', rec, rec + 4) === 'name') {
+          nameOffset = head.readUInt32BE(rec + 8);
+          nameLength = head.readUInt32BE(rec + 12);
+          break;
+        }
+      }
+      if (nameOffset < 0 || nameLength < 6) continue;
+      const table = Buffer.alloc(nameLength);
+      const got = fs.readSync(fd, table, 0, nameLength, nameOffset);
+      if (got < 6) continue;
+      const count = table.readUInt16BE(2);
+      const stringOffset = table.readUInt16BE(4);
+      for (let i = 0; i < count; i++) {
+        const rec = 6 + 12 * i;
+        if (rec + 12 > got) break;
+        const platformID = table.readUInt16BE(rec);
+        const languageID = table.readUInt16BE(rec + 4);
+        const nameID = table.readUInt16BE(rec + 6);
+        if (nameID !== 1 && nameID !== 16) continue;
+        const len = table.readUInt16BE(rec + 8);
+        const start = stringOffset + table.readUInt16BE(rec + 10);
+        if (start + len > got) continue;
+        const value = decodeNameString(table, start, len, platformID);
+        if (value) records.push({ platformID, languageID, nameID, value });
+      }
+    }
+    return records;
+  } catch {
+    return [];
+  } finally {
+    try { fs.closeSync(fd); } catch { /* ignore */ }
+  }
+}
+
+/** How much a `name` record should be trusted: English first, then the system default, then Chinese. */
+const LANGUAGE_RANK = new Map([[0x409, 6], [0x804, 5], [0x404, 4], [0x0, 3]]);
+
+function recordRank(record) {
+  let score = 0;
+  if (record.platformID === 3) score += 10;
+  else if (record.platformID === 0) score += 8;
+  else if (record.platformID === 1) score += 4;
+  score += LANGUAGE_RANK.get(record.languageID) ?? 1;
+  if (record.nameID === 16) score += 0.5;
+  return score;
+}
+
+/** The family names of one font file: the primary one plus its localized siblings. */
+function familiesOf(records) {
+  const best = new Map();
+  for (const record of records) {
+    const key = `${record.nameID}|${record.platformID}|${record.languageID}`;
+    const kept = best.get(key);
+    if (!kept || recordRank(record) > recordRank(kept)) best.set(key, record);
+  }
+  const all = [...best.values()].sort((a, b) => recordRank(b) - recordRank(a));
+  const primary = all.find((record) => record.nameID === 16) ?? all.find((record) => record.nameID === 1);
+  const out = [];
+  if (primary) out.push(primary.value);
+  for (const record of all) {
+    if (record === primary) continue;
+    if (record.languageID !== 0x804 && record.languageID !== 0x404 && record.languageID !== 0x0) continue;
+    if (out.includes(record.value)) continue;
+    out.push(record.value);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+/** The families AppKit knows about; empty when the helper is unavailable. */
+async function macFontFamilies() {
+  const { execFile } = await import('node:child_process');
+  return new Promise((resolve) => {
+    execFile(
+      '/usr/bin/osascript',
+      ['-l', 'JavaScript', '-e', MAC_FONT_SCRIPT],
+      { timeout: 15000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' },
+      (error, stdout, stderr) => {
+        if (error) { resolve([]); return; }
+        const text = `${stdout ?? ''}\n${stderr ?? ''}`;
+        resolve(text.split('\n').map((line) => line.trim()).filter(Boolean));
+      },
+    );
+  });
+}
+
+/** Latin names first, then the Chinese ones — the order a reader scans the list in. */
+function sortFontNames(names) {
+  const isCjk = (name) => /[㐀-鿿豈-﫿]/.test(name);
+  const latin = names.filter((name) => !isCjk(name)).sort((a, b) => a.localeCompare(b, 'en'));
+  const cjk = names.filter(isCjk).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  return [...latin, ...cjk];
+}
+
+/**
+ * Every font family installed on this computer.
+ * @returns {Promise<{fonts: string[], scanned: number}>}
+ */
+export async function listSystemFonts() {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const names = new Set();
+  const files = [];
+  for (const dir of fontDirectories((...parts) => parts.join('/'), os.homedir(), os.platform())) {
+    collectFontFiles(fs, dir, 0, files);
+  }
+  for (const file of files) {
+    for (const family of familiesOf(readFontFamilies(fs, file))) names.add(family);
+  }
+  if (os.platform() === 'darwin') {
+    for (const family of await macFontFamilies()) names.add(family);
+  }
+  return { fonts: sortFontNames([...names]), scanned: files.length };
+}
+
+/** The font list is cached: the folders do not change while the reader is open. */
+let fontCache = { at: 0, fonts: null };
+
+async function handleFonts() {
+  const now = Date.now();
+  if (!fontCache.fonts || now - fontCache.at > FONT_CACHE_MS) {
+    try {
+      const listed = await listSystemFonts();
+      fontCache = { at: now, fonts: listed.fonts };
+    } catch {
+      if (!fontCache.fonts) return jsonResponse({ error: 'fonts-unavailable', fonts: [] }, 500);
+    }
+  }
+  return jsonResponse({ fonts: fontCache.fonts ?? [], scannedAt: fontCache.at });
+}
+
 /**
  * Register the ask-the-book endpoints on the authenticated browser transport.
  * @param ctx - Host plugin context.
@@ -362,5 +610,11 @@ export function apply(ctx, config = {}) {
       requestBody: 'buffered',
       fetch: () => handleModels(child, options),
     }), 'bookshelf: ask-the-book model list');
+    child.effect(() => child.connection.fetch.register({
+      path: FONTS_PATH,
+      methods: ['POST'],
+      requestBody: 'buffered',
+      fetch: () => handleFonts(),
+    }), 'bookshelf: installed system fonts');
   });
 }

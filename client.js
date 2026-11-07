@@ -54,6 +54,14 @@ window.__ModuleLoader__.load({
       'reader.fontSans': '黑体',
       'reader.fontCustom': '自定义',
       'reader.fontCustomHint': '字体名，如：思源宋体',
+      'reader.fontSystem': '本机字体',
+      'reader.fontSearch': '搜索字体名…',
+      'reader.fontCount': '本机共 {n} 个字体',
+      'reader.fontScanning': '正在读取本机字体…',
+      'reader.fontScanFailed': '读取本机字体失败，可直接手动输入字体名',
+      'reader.fontRefresh': '重新扫描',
+      'reader.fontNone': '没有匹配的字体',
+      'reader.fontManual': '手动输入',
       'reader.fontSizePx': '{n} px',
       'reader.letterSpacing': '字间距',
       'reader.lsCompact': '紧凑',
@@ -160,6 +168,14 @@ window.__ModuleLoader__.load({
       'reader.fontSans': 'Sans',
       'reader.fontCustom': 'Custom',
       'reader.fontCustomHint': 'Type an installed font name, e.g. "JetBrains Mono", Noto Serif CJK SC',
+      'reader.fontSystem': 'Installed fonts',
+      'reader.fontSearch': 'Search a font name…',
+      'reader.fontCount': '{n} fonts on this computer',
+      'reader.fontScanning': 'Reading the installed fonts…',
+      'reader.fontScanFailed': 'Could not read the installed fonts — type a font name instead',
+      'reader.fontRefresh': 'Scan again',
+      'reader.fontNone': 'No matching font',
+      'reader.fontManual': 'Type a name',
       'reader.fontSizePx': '{n} px',
       'reader.letterSpacing': 'Letter spacing',
       'reader.lsCompact': 'Tight',
@@ -521,7 +537,7 @@ window.__ModuleLoader__.load({
     const EPUB_TOC_KEY = 'bookshelf.epubToc';
     // Bump this on every client change: it shows up in the panel header so a
     // stale bundle in the browser is obvious.
-    const BUILD = 'r18';
+    const BUILD = 'r19';
     // The reading position is mirrored in localStorage on every page turn. It is
     // synchronous, survives a module reload and does not depend on the Host
     // keeping this panel mounted — the IndexedDB row is the slower copy.
@@ -2084,6 +2100,19 @@ window.__ModuleLoader__.load({
 .bk-pdf-hud .bk-pdf-pageno{font-size:12px;opacity:.9;font-variant-numeric:tabular-nums;white-space:nowrap}
 .bk-fontinput{flex:1;border:1px solid var(--bk-barBorder);border-radius:8px;background:transparent;color:inherit;font-size:13px;padding:7px 10px;min-width:0}
 .bk-fontinput::placeholder{color:inherit;opacity:.45}
+/* 本机字体: the picker lists the fonts this computer has; every row shows its
+   name in that very font, so the choice is visible before it is made. */
+.bk-fontpick{display:flex;flex-direction:column;gap:6px;width:min(300px,calc(100vw - 80px))}
+.bk-fontpick-head{display:flex;align-items:center;gap:6px}
+.bk-fontpick-head .bk-fontinput{flex:1}
+.bk-fontpick-refresh{flex:none;width:28px;height:28px;border:1px solid var(--bk-barBorder);border-radius:8px;background:transparent;color:inherit;font-size:14px;line-height:1;cursor:pointer}
+.bk-fontpick-refresh:hover{background:rgba(127,127,127,.16)}
+.bk-fontpick-status{font-size:11.5px;opacity:.62;padding:0 2px}
+.bk-fontlist{width:100%;max-height:190px;overflow-y:auto;border:1px solid var(--bk-barBorder);border-radius:8px;padding:3px;display:flex;flex-direction:column}
+.bk-fontrow{border:none;background:transparent;color:inherit;font-family:inherit;font-size:13px;line-height:1.5;text-align:left;padding:5px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-fontrow:hover{background:rgba(127,127,127,.16)}
+.bk-fontrow.bk-on{background:rgba(127,127,127,.2);color:var(--bk-accent,#2f6f4f);font-weight:600}
+.bk-fontpick-empty{font-size:12.5px;opacity:.6;padding:10px 4px;text-align:center}
 .bk-loading{position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;background:var(--bk-bar,rgba(0,0,0,.4));color:var(--bk-barText,var(--dsw-alias-label-primary))}
 .bk-lightbox{position:absolute;inset:0;z-index:60;background:rgba(10,12,16,.93);display:flex;flex-direction:column}
 .bk-lightbox-bar{position:absolute;top:14px;left:14px;z-index:2;display:flex;align-items:center;gap:2px;background:rgba(28,30,34,.92);color:#e8eaed;border-radius:9px;padding:4px;box-shadow:0 4px 18px rgba(0,0,0,.4)}
@@ -2553,9 +2582,84 @@ window.__ModuleLoader__.load({
     const FONT_MIN = 12;
     const FONT_MAX = 40;
 
+    /* ------------------------------------------------------------------ *
+     * 本机字体 — the 「自定义」 picker lists the fonts this computer has.
+     *
+     * The Host reports what is installed (it reads the font folders and, on
+     * macOS, asks AppKit for the family list). The browser then keeps only the
+     * families the renderer can really draw, measured rather than assumed:
+     * a family that is not installed falls back to the next one in the stack,
+     * so both measurements stay equal — an installed one does not.
+     * ------------------------------------------------------------------ */
+    const FONTS_PATH = '/api/bookshelf/fonts';
+    const FONTS_CACHE_KEY = 'bookshelf.fonts';
+    const FONTS_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
+
+    /** The last scan, so the panel opens with the list already in it. */
+    function loadFontCache() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(FONTS_CACHE_KEY) ?? 'null');
+        if (!raw || !Array.isArray(raw.fonts)) return null;
+        if (!Number.isFinite(raw.at) || Date.now() - raw.at > FONTS_CACHE_MS) return null;
+        return raw.fonts;
+      } catch {
+        return null;
+      }
+    }
+
+    function saveFontCache(fonts) {
+      try { localStorage.setItem(FONTS_CACHE_KEY, JSON.stringify({ at: Date.now(), fonts })); } catch { /* ignore */ }
+    }
+
+    /** The families the renderer can really draw. */
+    function usableFonts(names) {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return names;
+        const text = '字体Wg123@—';
+        const measure = (family) => { ctx.font = `64px ${family}`; return ctx.measureText(text).width; };
+        const mono = measure('monospace');
+        const serif = measure('serif');
+        const out = [];
+        for (const name of names) {
+          const quoted = `"${String(name).replace(/["\\]/g, '')}"`;
+          if (measure(`${quoted}, monospace`) !== mono || measure(`${quoted}, serif`) !== serif) out.push(name);
+        }
+        return out;
+      } catch {
+        return names;
+      }
+    }
+
+    async function fetchSystemFonts(signal) {
+      const response = await fetch(FONTS_PATH, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+        signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = await response.json();
+      const names = Array.isArray(body?.fonts) ? body.fonts : [];
+      const usable = usableFonts(names);
+      saveFontCache(usable);
+      return usable;
+    }
+
+    /** A family name as CSS wants it: quoted, because most of them have a space. */
+    function fontStackFor(name) {
+      const clean = String(name ?? '').trim().replace(/["\\]/g, '');
+      if (!clean) return '';
+      return `"${clean}"`;
+    }
+
     function FontPanel({ prefs, setPrefs, onClose }) {
       // null = the size reads as a number; a string = the inline editor is open.
       const [draft, setDraft] = useState(null);
+      const [systemFonts, setSystemFonts] = useState(() => loadFontCache());
+      const [fontQuery, setFontQuery] = useState('');
+      const [fontState, setFontState] = useState(() => (loadFontCache() ? 'ready' : 'idle'));
       const fonts = [
         { id: 'default', label: t('reader.fontDefault') },
         { id: 'serif', label: t('reader.fontSerif') },
@@ -2635,15 +2739,72 @@ window.__ModuleLoader__.load({
       });
       const colVal = e('span', { className: 'bk-range-val' },
         prefs.colWidth > 0 ? `${prefs.colWidth} px` : t('reader.colFill'));
+      // 本机字体: the list is fetched once (the Host caches the scan) and kept in
+      // localStorage, so reopening the panel shows the fonts right away.
+      const scanFonts = useCallback((force) => {
+        setFontState('loading');
+        fetchSystemFonts()
+          .then((list) => {
+            setSystemFonts(list);
+            setFontState('ready');
+          })
+          .catch(() => {
+            setFontState('failed');
+            if (force) saveFontCache([]);
+          });
+      }, []);
+      useEffect(() => {
+        if (prefs.fontId !== 'custom') return undefined;
+        if (systemFonts) return undefined;
+        scanFonts(false);
+        return undefined;
+      }, [prefs.fontId, systemFonts, scanFonts]);
+      const query = fontQuery.trim().toLowerCase();
+      const shownFonts = useMemo(() => {
+        const list = systemFonts ?? [];
+        if (!query) return list;
+        return list.filter((name) => name.toLowerCase().includes(query));
+      }, [systemFonts, query]);
+      const pickFont = (name) => setPrefs((p) => ({ ...p, fontId: 'custom', customFont: name }));
+      const fontList = e('div', { className: 'bk-fontpick' },
+        e('div', { className: 'bk-fontpick-head' },
+          e('input', {
+            className: 'bk-fontinput', type: 'search', value: fontQuery,
+            placeholder: t('reader.fontSearch'), spellCheck: false,
+            onChange: (ev) => setFontQuery(ev.target.value),
+          }),
+          e('button', {
+            type: 'button', className: 'bk-fontpick-refresh', title: t('reader.fontRefresh'),
+            'aria-label': t('reader.fontRefresh'),
+            onClick: () => { setSystemFonts(null); scanFonts(true); },
+          }, '⟳'),
+        ),
+        e('div', { className: 'bk-fontpick-status' },
+          fontState === 'loading' ? t('reader.fontScanning')
+            : fontState === 'failed' ? t('reader.fontScanFailed')
+              : t('reader.fontCount', { n: shownFonts.length })),
+        shownFonts.length === 0
+          ? e('div', { className: 'bk-fontpick-empty' }, t('reader.fontNone'))
+          : e('div', { className: 'bk-fontlist' },
+            ...shownFonts.map((name) => e('button', {
+              key: name, type: 'button',
+              className: `bk-fontrow${prefs.customFont === name ? ' bk-on' : ''}`,
+              title: name,
+              style: { fontFamily: `${fontStackFor(name)}, ${FONT_STACKS.default}` },
+              onClick: () => pickFont(name),
+            }, name))),
+      );
       return e('div', { className: 'bk-fontpanel', onClick: (ev) => ev.stopPropagation() },
         row(t('reader.font'), pills(fonts, prefs.fontId, (id) => setPrefs((p) => ({ ...p, fontId: id })))),
         prefs.fontId === 'custom' && e('div', { className: 'bk-fontpanel-row' },
+          e('span', { className: 'bk-row-label' }, t('reader.fontManual')),
           e('input', {
             className: 'bk-fontinput', type: 'text', value: prefs.customFont ?? '',
             placeholder: t('reader.fontCustomHint'), spellCheck: false,
             onChange: (ev) => setPrefs((p) => ({ ...p, customFont: ev.target.value })),
           }),
         ),
+        prefs.fontId === 'custom' && fontList,
         row(t('reader.fontSize'), sizeControl),
         row(t('reader.letterSpacing'), pills(spacings, prefs.letterSpacing, (v) => setPrefs((p) => ({ ...p, letterSpacing: v })))),
         row(t('reader.lineHeight'), pills(lines, prefs.lineHeight, (v) => setPrefs((p) => ({ ...p, lineHeight: v })))),
@@ -4335,7 +4496,7 @@ window.__ModuleLoader__.load({
         // the text never jumps when the bar toggles.
         paddingTop: paged ? '56px' : (menuOpen ? '62px' : '28px'),
         fontFamily: prefs.fontId === 'custom' && customStack
-          ? `${customStack}, ${FONT_STACKS.default}`
+          ? `${fontStackFor(customStack)}, ${FONT_STACKS.default}`
           : FONT_STACKS[prefs.fontId] ?? FONT_STACKS.default,
         ...(paged ? {
           height: '100%',
