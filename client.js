@@ -539,7 +539,7 @@ window.__ModuleLoader__.load({
     const EPUB_TOC_KEY = 'bookshelf.epubToc';
     // Bump this on every client change: it shows up in the panel header so a
     // stale bundle in the browser is obvious.
-    const BUILD = 'r19';
+    const BUILD = 'r20';
     // The reading position is mirrored in localStorage on every page turn. It is
     // synchronous, survives a module reload and does not depend on the Host
     // keeping this panel mounted — the IndexedDB row is the slower copy.
@@ -1890,7 +1890,7 @@ window.__ModuleLoader__.load({
 .bk-iconbtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .bk-shelf-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:18px 16px;padding:6px 22px 28px;align-content:start}
 .bk-book{display:flex;flex-direction:column;gap:6px;min-width:0}
-.bk-cover{position:relative;aspect-ratio:3/4;border-radius:6px;overflow:hidden;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.16);background:linear-gradient(140deg,#5a7d9c,#31465c);border:none;padding:0}
+.bk-cover{position:relative;aspect-ratio:3/4;border-radius:6px;overflow:hidden;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.16);background:linear-gradient(140deg,#5a7d9c,#31465c);border:none;padding:0;transition:transform .18s ease,box-shadow .18s ease}
 .bk-cover img{width:100%;height:100%;object-fit:cover;display:block}
 .bk-cover-fallback{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;padding:12px 10px 14px;color:#f2f6fa;background:linear-gradient(155deg,#54708c 0%,#3a5068 55%,#2c3e50 100%)}
 .bk-cover-fallback::before{content:"";position:absolute;inset:7px;border:1px solid rgba(255,255,255,.35);border-radius:3px;pointer-events:none}
@@ -1898,10 +1898,20 @@ window.__ModuleLoader__.load({
 .bk-cover-name{margin-top:14px;font-size:13px;line-height:1.55;text-align:center;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all;flex:1;justify-content:center;display:flex;flex-direction:column;align-items:center}
 .bk-cover-name span{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
 .bk-cover-author{font-size:10px;opacity:.7;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bk-cover .bk-more{position:absolute;top:4px;right:4px;width:24px;height:24px;border:none;border-radius:50%;background:rgba(15,18,22,.55);color:#fff;display:none;align-items:center;justify-content:center;cursor:pointer;padding:0}
-.bk-book:hover .bk-more,.bk-book:focus-within .bk-more{display:inline-flex}
+/* The 「⋯」 floats on the cover: at rest it is only three small white dots with
+   a soft shadow, so it stays readable on a pale cover without becoming a grey
+   blob; the dark disc only appears when the pointer comes near. The button is
+   a sibling of the cover, not a child, so it is styled on its own. */
+.bk-more{position:absolute;top:5px;right:5px;width:28px;height:28px;border:none;border-radius:50%;padding:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:transparent;color:#fff;opacity:.6;transition:opacity .16s ease,background .16s ease,transform .16s ease}
+.bk-more svg{filter:drop-shadow(0 0 2px rgba(0,0,0,.95)) drop-shadow(0 1px 2px rgba(0,0,0,.45))}
+.bk-book:hover .bk-more,.bk-more:focus-visible{opacity:1;background:rgba(16,18,22,.66);box-shadow:0 2px 10px rgba(0,0,0,.34)}
+.bk-more:active{transform:scale(.94)}
+.bk-more:focus-visible{outline:2px solid var(--dsw-alias-accent,#2f6f4f);outline-offset:2px}
+/* A touch screen has no hover: the button stays there. */
+@media (hover:none){.bk-more{opacity:1;background:rgba(16,18,22,.55)}}
+.bk-book:hover .bk-cover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.26)}
 .bk-cover-meta{font-size:12px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bk-menu{position:absolute;top:30px;right:4px;z-index:30;min-width:120px;background:var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base));border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.2);padding:4px;display:flex;flex-direction:column}
+.bk-menu{position:absolute;top:36px;right:6px;z-index:30;min-width:132px;background:var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base));border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.28);padding:5px;display:flex;flex-direction:column}
 .bk-menu button{border:none;background:transparent;color:inherit;font-size:13px;text-align:left;padding:7px 10px;border-radius:6px;cursor:pointer;display:flex;gap:8px;align-items:center}
 .bk-menu button:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .bk-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;margin:0 22px 24px;border:1.5px dashed var(--dsw-alias-border-l2,rgba(0,0,0,.15));border-radius:12px;color:var(--dsw-alias-label-secondary);text-align:center;padding:24px}
@@ -2281,7 +2291,7 @@ window.__ModuleLoader__.load({
           e('button', {
             className: 'bk-more', type: 'button', 'aria-label': t('shelf.remove'),
             onClick: (ev) => { ev.stopPropagation(); setMenuOpen((v) => !v); },
-          }, e(Icon, { paths: ICON_MORE, size: 14, filled: true, strokeWidth: 2.4 })),
+          }, e(Icon, { paths: ICON_MORE, size: 15, filled: true, strokeWidth: 3 })),
           menuOpen && e('div', { className: 'bk-menu' },
             e('button', { type: 'button', onClick: () => { setMenuOpen(false); onOpen(record); } },
               e(Icon, { paths: ICON_SHELF, size: 14 }), t('shelf.continue')),
