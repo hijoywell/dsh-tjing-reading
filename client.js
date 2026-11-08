@@ -124,6 +124,7 @@ window.__ModuleLoader__.load({
       'reader.tabMarks': '划线',
       'reader.tabToc': '目录',
       'reader.tocEmpty': '这本书没有目录',
+      'reader.tocResize': '拖动调整目录宽度',
       'reader.pdfPages': '页码',
       'reader.pdfPageN': '第 {n} 页',
       'reader.pdfJump': '跳到第几页',
@@ -254,6 +255,7 @@ window.__ModuleLoader__.load({
       'reader.tabMarks': 'Highlights',
       'reader.tabToc': 'Contents',
       'reader.tocEmpty': 'This book has no contents',
+      'reader.tocResize': 'Drag to resize the contents panel',
       'reader.pdfPages': 'Pages',
       'reader.pdfPageN': 'Page {n}',
       'reader.pdfJump': 'Go to page',
@@ -571,7 +573,7 @@ window.__ModuleLoader__.load({
     const EPUB_TOC_KEY = 'bookshelf.epubToc';
     // Bump this on every client change: it shows up in the panel header so a
     // stale bundle in the browser is obvious.
-    const BUILD = 'r24';
+    const BUILD = 'r25';
     // The reading position is mirrored in localStorage on every page turn. It is
     // synchronous, survives a module reload and does not depend on the Host
     // keeping this panel mounted — the IndexedDB row is the slower copy.
@@ -636,6 +638,107 @@ window.__ModuleLoader__.load({
 
     function newGroupId() {
       return `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 目录 panel width — dragged once, remembered for every book.
+     *
+     * The panel is docked on the left and pushes the pages, so its width is a
+     * reading preference, not a per-book one: one number for EPUB and PDF
+     * alike, stored next to the other prefs.
+     * ------------------------------------------------------------------ */
+    const TOC_WIDTH_KEY = 'bookshelf.tocWidth';
+    const TOC_WIDTH_DEFAULT = 300;
+    const TOC_WIDTH_MIN = 220;
+    const TOC_WIDTH_MAX = 720;
+    /** Never let the panel eat the page: keep this much of the pane for reading. */
+    const TOC_KEEP_READING = 260;
+
+    function loadTocWidth() {
+      try {
+        const raw = Number(localStorage.getItem(TOC_WIDTH_KEY));
+        if (!Number.isFinite(raw) || raw <= 0) return TOC_WIDTH_DEFAULT;
+        return Math.round(Math.min(TOC_WIDTH_MAX, Math.max(TOC_WIDTH_MIN, raw)));
+      } catch {
+        return TOC_WIDTH_DEFAULT;
+      }
+    }
+
+    function saveTocWidth(width) {
+      try { localStorage.setItem(TOC_WIDTH_KEY, String(Math.round(width))); } catch { /* ignore */ }
+    }
+
+    /**
+     * Drag-to-resize for the docked 目录 panel.
+     *
+     * The handle sits on the panel's right edge, so dragging right widens it.
+     * The upper bound is whichever comes first: the panel's own maximum, or
+     * "leave this much for the text" — a 700px panel in a 600px pane would
+     * otherwise squeeze the pages to nothing.
+     */
+    function useDockWidth() {
+      const [width, setWidth] = useState(loadTocWidth);
+      const widthRef = useRef(width);
+      const dragRef = useRef(null);
+
+      const applyWidth = useCallback((next) => {
+        const clamped = Math.round(Math.min(TOC_WIDTH_MAX, Math.max(TOC_WIDTH_MIN, next)));
+        widthRef.current = clamped;
+        setWidth(clamped);
+      }, []);
+
+      const onResizeDown = (ev) => {
+        if (ev.button !== undefined && ev.button !== 0) return;
+        ev.preventDefault();
+        const panel = ev.currentTarget.parentElement;
+        const pane = panel?.parentElement;
+        dragRef.current = {
+          x: ev.clientX,
+          width: panel ? panel.getBoundingClientRect().width : widthRef.current,
+          // Room the pane can spare: its own width minus the reading floor.
+          limit: pane ? Math.max(TOC_WIDTH_MIN, pane.getBoundingClientRect().width - TOC_KEEP_READING) : TOC_WIDTH_MAX,
+        };
+        ev.currentTarget.setPointerCapture?.(ev.pointerId);
+      };
+      const onResizeMove = (ev) => {
+        const drag = dragRef.current;
+        if (!drag) return;
+        const next = drag.width + (ev.clientX - drag.x);
+        applyWidth(Math.min(drag.limit, next));
+      };
+      const onResizeUp = (ev) => {
+        if (!dragRef.current) return;
+        dragRef.current = null;
+        ev.currentTarget.releasePointerCapture?.(ev.pointerId);
+        saveTocWidth(widthRef.current);
+      };
+
+      // A release outside the window never reaches the handle; commit from there
+      // too, and once more on unmount so a width survives closing the panel.
+      useEffect(() => {
+        const settle = () => {
+          if (!dragRef.current) return;
+          dragRef.current = null;
+          saveTocWidth(widthRef.current);
+        };
+        window.addEventListener('pointerup', settle);
+        window.addEventListener('pointercancel', settle);
+        return () => {
+          window.removeEventListener('pointerup', settle);
+          window.removeEventListener('pointercancel', settle);
+          saveTocWidth(widthRef.current);
+        };
+      }, []);
+
+      const handle = e('div', {
+        className: 'bk-dock-resize', role: 'separator', 'aria-orientation': 'vertical',
+        'aria-label': t('reader.tocResize'), title: t('reader.tocResize'),
+        onPointerDown: onResizeDown,
+        onPointerMove: onResizeMove,
+        onPointerUp: onResizeUp,
+        onPointerCancel: onResizeUp,
+      });
+      return { width, handle };
     }
     // Zoom steps relative to fit-width (100%), like a desktop previewer.
     const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -2161,10 +2264,17 @@ window.__ModuleLoader__.load({
 /* 目录 panel — docked on the left like the app sidebar (no backdrop, pushes the pages). */
 /* The panel wears the reading paper: the body theme decides the background,
    the text colour and the divider, so the two halves always look like one page. */
-.bk-dock-panel{flex:none;width:min(300px,52%);min-height:0;display:flex;flex-direction:column;background:var(--bk-paper,transparent);color:inherit;border-right:1px solid var(--bk-barBorder,rgba(0,0,0,.1));box-shadow:none}
+.bk-dock-panel{position:relative;flex:none;width:min(300px,52%);min-height:0;display:flex;flex-direction:column;background:var(--bk-paper,transparent);color:inherit;border-right:1px solid var(--bk-barBorder,rgba(0,0,0,.1));box-shadow:none}
 .bk-dock-panel-head{display:flex;align-items:center;gap:8px;padding:14px 12px 8px;font-size:15px;font-weight:600}
-.bk-dock-panel-head .bk-iconbtn{margin-left:auto}
 .bk-dock-build{margin-left:auto;font-size:10px;opacity:.4;font-variant-numeric:tabular-nums;letter-spacing:.5px}
+/* Drag handle on the panel's right edge. It straddles the border so the hit
+   area is 11px wide without pushing the content, and shows a short bar only
+   when the pointer is near — a permanent grip would be noise next to a list. */
+.bk-dock-resize{position:absolute;top:0;bottom:0;right:-6px;width:12px;z-index:3;cursor:col-resize;touch-action:none;display:flex;align-items:center;justify-content:center}
+.bk-dock-resize::after{content:"";width:3px;height:38px;border-radius:2px;background:currentColor;opacity:0;transition:opacity .15s ease,height .15s ease}
+.bk-dock-resize:hover::after,.bk-dock-resize:active::after{opacity:.32;height:60px}
+@media (max-width:560px){.bk-dock-resize{display:none}}
+.bk-dock-panel-head .bk-iconbtn{margin-left:auto}
 .bk-dock-panel-head .bk-iconbtn{margin-left:4px}
 .bk-dock-panel .bk-notes-tabs{padding:0 10px 8px}
 .bk-dock-panel .bk-drawer-list{padding:4px 6px 16px}
@@ -2699,6 +2809,7 @@ window.__ModuleLoader__.load({
       onClose, onGoto, onGotoMark, onToggleBookmark, onRemove, onEditNote,
     }) {
       const [tab, setTab] = useState('toc');
+      const dock = useDockWidth();
       const listRef = useRef(null);
       const rows = epub.toc ?? [];
       const bookmarks = (marks ?? []).filter((mark) => mark.kind === 'bookmark');
@@ -2744,7 +2855,11 @@ window.__ModuleLoader__.load({
         );
       };
 
-      return e('aside', { className: 'bk-dock-panel', 'aria-label': t('reader.toc') },
+      return e('aside', {
+        className: 'bk-dock-panel', 'aria-label': t('reader.toc'),
+        style: { width: `${dock.width}px` },
+      },
+        dock.handle,
         e('div', { className: 'bk-dock-panel-head' },
           t('reader.toc'),
           // Build marker: tells a stale bundle apart from a logic bug.
@@ -3814,6 +3929,7 @@ Noto Sans Tagalog
     /** 目录 + 书签 for a PDF, docked like the app sidebar: a persistent left
      *  panel (no backdrop, does not close on jump) toggled by the 目录 button. */
     function PdfTocPanel({ pdf, outline, metrics, page, marks, onClose, onGoto, onRemoveMark }) {
+      const dock = useDockWidth();
       const [tab, setTab] = useState('toc');
       const [jump, setJump] = useState('');
       const total = metrics.length;
@@ -3830,7 +3946,11 @@ Noto Sans Tagalog
         if (Number.isFinite(n) && n >= 1 && n <= total) onGoto(n);
         setJump('');
       };
-      return e('aside', { className: 'bk-dock-panel', 'aria-label': t('reader.toc') },
+      return e('aside', {
+        className: 'bk-dock-panel', 'aria-label': t('reader.toc'),
+        style: { width: `${dock.width}px` },
+      },
+        dock.handle,
         e('div', { className: 'bk-dock-panel-head' },
           t('reader.toc'),
           e('button', {
