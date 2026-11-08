@@ -1,6 +1,6 @@
 {
   "name": "dsh-tjing-reading",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "description": "竹居 — 在 DSH 侧边栏打开 EPUB / PDF 阅读器，仿微信读书界面：目录、书签、划线、进度记忆，并可用基于书本内容的 AI 问书助手。",

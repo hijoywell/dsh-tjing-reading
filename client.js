@@ -573,7 +573,7 @@ window.__ModuleLoader__.load({
     const EPUB_TOC_KEY = 'bookshelf.epubToc';
     // Bump this on every client change: it shows up in the panel header so a
     // stale bundle in the browser is obvious.
-    const BUILD = 'r26';
+    const BUILD = 'r27';
     // The reading position is mirrored in localStorage on every page turn. It is
     // synchronous, survives a module reload and does not depend on the Host
     // keeping this panel mounted — the IndexedDB row is the slower copy.
@@ -740,8 +740,14 @@ window.__ModuleLoader__.load({
       });
       return { width, handle };
     }
-    // Zoom steps relative to fit-width (100%), like a desktop previewer.
-    const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+    // Zoom steps relative to fit-width (100%). 10% increments through the range
+    // people actually read in; coarser only past 200%. The old ladder jumped
+    // 25–50% per click and felt like it skipped whole sizes.
+    const ZOOM_STEPS = [
+      0.5, 0.6, 0.7, 0.8, 0.9,
+      1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2,
+      2.25, 2.5, 2.75, 3, 3.5, 4,
+    ];
     const THEMES = [
       { id: 'white', bg: '#ffffff', text: '#262626', muted: '#8a8a8a', accent: '#2f6f4f', bar: 'rgba(255,255,255,.97)', barText: '#262626', barBorder: 'rgba(0,0,0,.08)' },
       { id: 'sepia', bg: '#f5edda', text: '#40382a', muted: '#a09477', accent: '#2f6f4f', bar: 'rgba(245,237,218,.97)', barText: '#40382a', barBorder: 'rgba(64,56,42,.12)' },
