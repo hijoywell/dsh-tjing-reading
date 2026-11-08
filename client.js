@@ -573,7 +573,7 @@ window.__ModuleLoader__.load({
     const EPUB_TOC_KEY = 'bookshelf.epubToc';
     // Bump this on every client change: it shows up in the panel header so a
     // stale bundle in the browser is obvious.
-    const BUILD = 'r25';
+    const BUILD = 'r26';
     // The reading position is mirrored in localStorage on every page turn. It is
     // synchronous, survives a module reload and does not depend on the Host
     // keeping this panel mounted — the IndexedDB row is the slower copy.
@@ -2266,7 +2266,6 @@ window.__ModuleLoader__.load({
    the text colour and the divider, so the two halves always look like one page. */
 .bk-dock-panel{position:relative;flex:none;width:min(300px,52%);min-height:0;display:flex;flex-direction:column;background:var(--bk-paper,transparent);color:inherit;border-right:1px solid var(--bk-barBorder,rgba(0,0,0,.1));box-shadow:none}
 .bk-dock-panel-head{display:flex;align-items:center;gap:8px;padding:14px 12px 8px;font-size:15px;font-weight:600}
-.bk-dock-build{margin-left:auto;font-size:10px;opacity:.4;font-variant-numeric:tabular-nums;letter-spacing:.5px}
 /* Drag handle on the panel's right edge. It straddles the border so the hit
    area is 11px wide without pushing the content, and shows a short bar only
    when the pointer is near — a permanent grip would be noise next to a list. */
@@ -2857,13 +2856,14 @@ window.__ModuleLoader__.load({
 
       return e('aside', {
         className: 'bk-dock-panel', 'aria-label': t('reader.toc'),
+        // The build travels as an attribute, not as text: it is there for
+        // diagnosing a stale bundle, and a stray "r25" in the header is noise.
+        'data-build': BUILD,
         style: { width: `${dock.width}px` },
       },
         dock.handle,
         e('div', { className: 'bk-dock-panel-head' },
           t('reader.toc'),
-          // Build marker: tells a stale bundle apart from a logic bug.
-          e('span', { className: 'bk-dock-build', title: 'dsh-tjing-reading build' }, BUILD),
           e('button', {
             className: 'bk-iconbtn', type: 'button',
             'aria-label': t('reader.toc'), title: t('reader.toc'), onClick: onClose,
@@ -3948,6 +3948,9 @@ Noto Sans Tagalog
       };
       return e('aside', {
         className: 'bk-dock-panel', 'aria-label': t('reader.toc'),
+        // The build travels as an attribute, not as text: it is there for
+        // diagnosing a stale bundle, and a stray "r25" in the header is noise.
+        'data-build': BUILD,
         style: { width: `${dock.width}px` },
       },
         dock.handle,
