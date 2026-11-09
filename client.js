@@ -149,6 +149,7 @@ window.__ModuleLoader__.load({
       'reader.markSave': '保存',
       'reader.markDelete': '删除',
       'reader.markCancel': '取消',
+      'reader.footnote': '注释',
       'reader.markQuote': '原文',
       'reader.markColor': '颜色',
       'reader.colorYellow': '黄色',
@@ -290,6 +291,7 @@ window.__ModuleLoader__.load({
       'reader.markSave': 'Save',
       'reader.markDelete': 'Delete',
       'reader.markCancel': 'Cancel',
+      'reader.footnote': 'Note',
       'reader.markQuote': 'Quoted',
       'reader.markColor': 'Colour',
       'reader.colorYellow': 'Yellow',
@@ -2972,6 +2974,78 @@ return { parseTextBook };
         if (!heading.getAttribute('id')) heading.setAttribute('id', `bk-h-${index}-${headingIndex}`);
         headingIndex += 1;
       }
+      /* ---- 脚注 ------------------------------------------------------------
+       * Print and TXT books mark a note as a bracketed number — [1], 〔1〕, ① —
+       * in the text, with the matching entry at the end of the chapter. Pair the
+       * two: the entry becomes a small, quieter footnote block and each marker
+       * becomes a button that opens the entry on click, the way WeChat Read does
+       * it. Only markers that actually have an entry are touched, so ordinary
+       * bracketed numbers in prose stay plain text. */
+      const FN_MARKER = /[\[［〔【（(]\s*(?:注\s*)?(\d{1,3})\s*[\]］〕】）)]|[①-⑳]/g;
+      const fnKeyOf = (raw) => {
+        const digits = /(\d{1,3})/.exec(raw);
+        if (digits) return digits[1];
+        const circled = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳'.indexOf(raw);
+        return circled >= 0 ? String(circled + 1) : '';
+      };
+      const fnBlocks = [];
+      for (const el of body.querySelectorAll('p,div,li,td,dd,blockquote')) {
+        if (el.querySelector('p,div,li,table,figure,blockquote,h1,h2,h3')) continue;
+        if (el.closest('.bk-fn')) continue;
+        const text = (el.textContent ?? '').trim();
+        if (!text || text.length > 1200) continue;
+        FN_MARKER.lastIndex = 0;
+        const match = FN_MARKER.exec(text);
+        if (!match || match.index !== 0) continue;
+        const key = fnKeyOf(match[0]);
+        if (!key) continue;
+        el.classList.add('bk-fn');
+        el.setAttribute('id', `bk-fn-${index}-${key}`);
+        fnBlocks.push({ key, text });
+      }
+      if (fnBlocks.length) {
+        const known = new Set(fnBlocks.map((row) => row.key));
+        const walker = body.ownerDocument.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+        const targets = [];
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const parent = node.parentElement;
+          if (!parent) continue;
+          if (parent.closest('.bk-fn,.bk-fnref,script,style,pre,code')) continue;
+          FN_MARKER.lastIndex = 0;
+          if (!FN_MARKER.test(node.nodeValue ?? '')) continue;
+          targets.push(node);
+        }
+        for (const node of targets) {
+          const source = node.nodeValue ?? '';
+          const pieces = [];
+          let cursor = 0;
+          FN_MARKER.lastIndex = 0;
+          for (let match = FN_MARKER.exec(source); match; match = FN_MARKER.exec(source)) {
+            const key = fnKeyOf(match[0]);
+            if (!key || !known.has(key)) continue;
+            if (match.index > cursor) pieces.push({ text: source.slice(cursor, match.index) });
+            pieces.push({ key, label: match[0] });
+            cursor = match.index + match[0].length;
+          }
+          if (!pieces.length) continue;
+          if (cursor < source.length) pieces.push({ text: source.slice(cursor) });
+          const fragment = body.ownerDocument.createDocumentFragment();
+          for (const piece of pieces) {
+            if (piece.text !== undefined) {
+              fragment.appendChild(body.ownerDocument.createTextNode(piece.text));
+              continue;
+            }
+            const button = body.ownerDocument.createElement('button');
+            button.type = 'button';
+            button.className = 'bk-fnref';
+            button.setAttribute('data-fn', `bk-fn-${index}-${piece.key}`);
+            button.setAttribute('aria-label', piece.label);
+            button.textContent = piece.label;
+            fragment.appendChild(button);
+          }
+          node.parentNode.replaceChild(fragment, node);
+        }
+      }
       return body.innerHTML;
     }
 
@@ -3854,6 +3928,14 @@ return { parseTextBook };
 .bk-content blockquote p,.bk-content .bk-quote p,.bk-content [class*="blockquot" i] p{margin:.45em 0;color:inherit;font-size:inherit}
 .bk-content .bk-quote-attrib{margin:.2em 0 1.4em;padding-right:2px;text-align:right;color:var(--bk-muted,inherit);font-size:.88em}
 .bk-content cite{color:var(--bk-muted,inherit);font-style:italic}
+/* 脚注: the entry reads as apparatus, not as body text — smaller, in a serif
+   face, quieter colour, with a hairline separating it from the chapter. */
+.bk-content .bk-fn{margin:.5em 0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",SimSun,Georgia,serif;font-size:.82em;line-height:1.75;letter-spacing:0;opacity:.76}
+.bk-content .bk-fn::first-line{letter-spacing:0}
+.bk-content :not(.bk-fn) + .bk-fn{border-top:1px solid var(--bk-barBorder,rgba(127,127,127,.25));padding-top:.6em;margin-top:1.6em}
+/* 正文里的脚注标记: small superscript-looking button, not a link. */
+.bk-content .bk-fnref{display:inline;border:none;background:transparent;color:var(--bk-accent,#2f6f4f);font:inherit;font-size:.78em;line-height:0;padding:0 1px;margin:0 1px;cursor:pointer;vertical-align:super;text-decoration:underline dotted;text-underline-offset:2px;text-decoration-thickness:1px;opacity:.9}
+.bk-content .bk-fnref:hover,.bk-content .bk-fnref:focus-visible{opacity:1;background:rgba(127,127,127,.16);border-radius:3px}
 .bk-content blockquote blockquote,.bk-content .bk-quote .bk-quote{font-size:1em;margin:.6em 0;padding-left:10px;opacity:.9}
 .bk-content table{border-collapse:collapse;margin:1em 0;max-width:100%;display:block;overflow-x:auto}
 .bk-content td,.bk-content th{border:1px solid rgba(127,127,127,.3);padding:4px 10px}
@@ -3931,6 +4013,12 @@ return { parseTextBook };
 .bk-selbtn:hover{background:rgba(255,255,255,.14)}
 /* 想法 editor — same card for a new note, an existing highlight and a bookmark. */
 .bk-notepop{position:fixed;z-index:45;width:min(330px,calc(100vw - 32px));transform:translateX(-50%);display:flex;flex-direction:column;gap:10px;padding:13px 14px;border-radius:14px;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);box-shadow:0 16px 40px rgba(0,0,0,.28);animation:bk-fade-in .14s ease}
+/* 脚注 bubble — the entry text, opened by tapping a [1] marker. */
+.bk-fnpop{position:fixed;z-index:46;width:min(340px,calc(100vw - 28px));transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;padding:11px 13px 12px;border-radius:12px;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);box-shadow:0 14px 36px rgba(0,0,0,.3);animation:bk-fade-in .12s ease}
+.bk-fnpop-head{display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.08em;opacity:.55;text-transform:uppercase}
+.bk-fnpop-body{font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",SimSun,Georgia,serif;font-size:13.5px;line-height:1.8;max-height:min(38vh,300px);overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+.bk-fnpop-close{margin-left:auto;border:none;background:transparent;color:inherit;cursor:pointer;opacity:.6;padding:0 2px;font-size:14px;line-height:1}
+.bk-fnpop-close:hover{opacity:1}
 .bk-notepop-quote{font-size:12.5px;line-height:1.65;opacity:.7;max-height:62px;overflow:hidden;border-left:3px solid var(--bk-accent,#2f6f4f);padding-left:9px;white-space:pre-wrap;word-break:break-word}
 .bk-notepop-input{width:100%;min-height:76px;max-height:220px;resize:vertical;border:1px solid var(--bk-barBorder);border-radius:10px;background:transparent;color:inherit;font-family:inherit;font-size:14px;line-height:1.65;padding:8px 10px;outline:none}
 .bk-notepop-input:focus{border-color:var(--bk-accent,#2f6f4f)}
@@ -6745,6 +6833,8 @@ Noto Sans Tagalog
       const [fontOpen, setFontOpen] = useState(false);
       const [themeOpen, setThemeOpen] = useState(false);
       const [lightbox, setLightbox] = useState(null);
+      // 脚注 bubble: which entry is open and where to anchor it.
+      const [fnPop, setFnPop] = useState(null);
       // 划线 / 书签 / 批注 UI state: the selection toolbar, the note card, the
       // 笔记 drawer, and the "jump to this mark" request.
       const [sel, setSel] = useState(null);
@@ -7047,6 +7137,8 @@ Noto Sans Tagalog
         if (!el) return;
         // A scroll invalidates the anchor the selection toolbar was placed on.
         setSel(null);
+        // …and the fixed-position footnote bubble anchored to a marker.
+        setFnPop((open) => (open ? null : open));
         // A scroll event fired by a reflow (see layoutUntil) must not hide the chrome.
         if (Date.now() > layoutUntil.current) hideChrome();
         // Paged mode reports its position as a page ratio; the strip is not a
@@ -7117,6 +7209,25 @@ Noto Sans Tagalog
       }, []);
 
       const onReaderClick = useCallback((ev) => {
+        // A [1] marker opens its note in place; nothing else in the page reacts.
+        const fnRef = ev.target.closest?.('.bk-fnref');
+        if (fnRef) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const entry = document.getElementById(fnRef.getAttribute('data-fn') ?? '');
+          const rect = fnRef.getBoundingClientRect();
+          const half = Math.min(170, (window.innerWidth || 1024) / 2 - 12);
+          setFnPop({
+            label: (fnRef.textContent ?? '').trim(),
+            text: (entry?.textContent ?? '').trim(),
+            left: Math.min(Math.max(rect.left + rect.width / 2, half), (window.innerWidth || 1024) - half),
+            top: rect.top > 170 ? rect.top - 10 : rect.bottom + 10,
+            above: rect.top > 170,
+          });
+          return;
+        }
+        // Any other click dismisses an open footnote bubble.
+        setFnPop((open) => (open ? null : open));
         const link = ev.target.closest?.('a[data-bk-chapter]');
         if (link) {
           ev.preventDefault();
@@ -7415,7 +7526,7 @@ Noto Sans Tagalog
           return;
         }
         if (moved) return; // a drag: selection or scroll, never a tap
-        if (ev.target.closest?.('a[data-bk-chapter],img[data-bk-image]')) return;
+        if (ev.target.closest?.('a[data-bk-chapter],img[data-bk-image],.bk-fnref')) return;
         // A tap on a highlight opens its card instead of toggling the chrome.
         if (ev.target.closest?.('mark.bk-mark')) return;
         if (hasSelection()) return;
@@ -7577,6 +7688,28 @@ Noto Sans Tagalog
                 onClose: () => setDraft(null),
               }),
               lightbox && e(ImageLightbox, { src: lightbox, onClose: () => setLightbox(null) }),
+              fnPop && e('div', {
+                className: 'bk-fnpop',
+                style: {
+                  left: `${fnPop.left}px`,
+                  top: `${fnPop.top}px`,
+                  transform: `translate(-50%, ${fnPop.above ? '-100%' : '0'})`,
+                },
+                onClick: (ev) => ev.stopPropagation(),
+                role: 'dialog',
+                'aria-label': t('reader.footnote'),
+              },
+                e('div', { className: 'bk-fnpop-head' },
+                  t('reader.footnote'),
+                  fnPop.label ? ` ${fnPop.label}` : '',
+                  e('button', {
+                    className: 'bk-fnpop-close', type: 'button',
+                    'aria-label': t('reader.markCancel'), title: t('reader.markCancel'),
+                    onClick: () => setFnPop(null),
+                  }, '✕'),
+                ),
+                e('div', { className: 'bk-fnpop-body' }, fnPop.text || '—'),
+              ),
               menuOpen && !aiOpen && e(AIBubble, {
                 onClick: () => {
                   setAiOpen(true);
