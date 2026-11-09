@@ -1,37 +1,84 @@
-# 竹居 (Zhu Ju) — `dsh-tjing-reading`
+# 竹居 · dsh-tjing-reading
 
-竹居（Zhu Ju）是专为 DSH 侧边栏及主面板设计的 **EPUB / PDF 阅读器插件**。它采用仿微信读书的清爽阅读界面，并内置了基于图书上下文的 AI 问书助手。
+An EPUB / PDF reader that lives in the DSH sidebar — WeChat Read style typography, table of contents, bookmarks, highlights and reading-progress memory, plus an AI assistant that answers only from passages retrieved from the book you have open.
 
-## 🌟 主要功能
+**English** · [简体中文](README.zh.md)
 
-- 📚 **图书管理与导入**：
-  - 支持通过浏览器文件选择器或拖拽导入 **EPUB** 与 **PDF** 文件。
-  - 图书数据和阅读进度在浏览器本地通过 `IndexedDB` 安全持久化存储。
-- 📖 **微信读书风格阅读界面**：
-  - 极致优雅的沉浸式阅读体验。
-  - 支持多主题切换（默认、护眼绿、羊皮纸、暗黑模式等）。
-  - 支持字号调节、行距调节、目录导航（TOC）以及章节跳转。
-  - 内置 EPUB 解压（基于平台 `DecompressionStream`）与原生 PDF 渲染。
-- 🤖 **AI 问书助手**：
-  - 宿主端（Host）提供专有的 `/api/bookshelf/ai/chat` 接口。
-  - 浏览器检索当前开放图书的相关段落切片（Passages），AI 结合书本上下文提供精确、带有依据的流式问答服务。
-- 🧩 **DSH 模块化集成**：
-  - 作为 DSH 插件无缝注册到左侧边栏 (`sidebar.panellist` -> `reader`) 及主面板。
+> Verified on DSH 0.2.1 – 0.2.2 (desktop and `web` profile) · Plain JavaScript, no build step · MIT
 
 ---
 
-## 📁 目录结构
+## Features
 
-- `index.js` - 宿主端（Host）后端逻辑，负责处理 AI 问书请求及上下文组装。
-- `client.js` - 客户端（Client）前端逻辑，实现阅读器 UI、排版、EPUB/PDF 解析与图书管理。
-- `cordis.patch.yml` - Cordis 补丁配置文件。
-- `icon.svg` / `icon-glyph.png` - 插件图标。
-- `locale/` - 多语言国际化支持（中文 `zh.json`、英文 `en.json`）。
-- `vendor/` - PDF 渲染引擎等第三方依赖（PDF.js）。
-- `package.json` - 插件元数据与 DSH 插件声明配置。
+- **Import** EPUB or PDF through the file picker, or drag & drop into the bookshelf.
+- **Reader** with WeChat Read style typography: font size, line height, page margins, and multiple themes (default, green, parchment, dark).
+- **Navigation**: table of contents, chapter jumps, bookmarks and highlights.
+- **Progress memory**: reopening a book returns you to where you left off.
+- **PDF**: 22 zoom steps, continuous scrolling, first-page cover thumbnails.
+- **Ask the book**: an AI assistant grounded in passages retrieved from the open book — streamed answers with the cited passages attached.
+- **Bilingual UI**: Chinese and English.
 
----
+## Install
 
-## 许可证
+The desktop app owns its `desktop` profile, so plugins are installed from the UI rather than the CLI.
 
-MIT License
+**Desktop** — Settings → Plugins → Add plugin, then enter:
+
+```
+github:hijoywell/dsh-tjing-reading
+```
+
+**Any other profile** (web, tui, custom):
+
+```bash
+dsh plugin --profile web add github:hijoywell/dsh-tjing-reading
+```
+
+**From a source checkout** (development):
+
+```bash
+git clone https://github.com/hijoywell/dsh-tjing-reading
+dsh plugin --profile web add "link:$PWD/dsh-tjing-reading"
+```
+
+Restart DSH after installing; the 竹居 icon appears in the sidebar.
+
+> Not published to npm yet — `dsh plugin add dsh-tjing-reading` will fail. Use the Git address above.
+
+## Usage
+
+1. Click 竹居 in the sidebar and import an EPUB or PDF.
+2. Open a book to read; the top bar switches theme, font size and line height, and the contents panel handles chapter jumps and bookmarks.
+3. Select text to highlight. The 问书 (ask the book) panel sends your question together with the relevant passages from the current book.
+
+## Where your data lives
+
+Book files, bookmarks, highlights and reading progress are stored in the browser's IndexedDB. Nothing is uploaded to a server.
+
+IndexedDB is scoped per origin, so switching browser or port (another profile, a different `dsh web` port) starts with an empty bookshelf. That is the browser's security model, not data loss.
+
+When you ask the book a question, only the handful of passages retrieved for that question — never the whole book — is sent to the model configured in your host. The host does not store book content. Without a configured model, the assistant tells you to set one up instead of failing silently.
+
+## Compatibility
+
+- Verified on DSH `0.2.1-rc.5` and `0.2.2-rc.1`, desktop and `web` profile.
+- No `engines.dsh` constraint is declared on purpose: a narrow range makes the host refuse to load the plugin after a DSH upgrade. If your host is older than 0.2.1 the sidebar entry will not appear — upgrade DSH first.
+- Standard Web APIs only: `DecompressionStream` for EPUB, Canvas for PDF, IndexedDB for storage. pdf.js (Apache-2.0) is inlined into `client.js`, so there are no runtime dependencies.
+
+## Development
+
+```
+index.js            Host half — /api/bookshelf/ai/chat and /api/bookshelf/ai/models
+client.js           Client half — sidebar entry, bookshelf, reader, EPUB/PDF parsing
+cordis.patch.yml    Cordis patch that mounts the plugin
+locale/             zh.json / en.json
+icon.svg            Sidebar icon
+```
+
+- No bundler, no test script, no npm dependencies: edit the files and they are the artifact.
+- Install with `link:` into a profile while developing, then restart DSH to pick changes up (host code is loaded into the process; for `client.js`-only changes try a page refresh first).
+- The `id` in `window.__ModuleLoader__.load({ id: 'dsh-tjing-reading', … })` must match the package name, otherwise the host cannot resolve the client half.
+
+## License
+
+MIT

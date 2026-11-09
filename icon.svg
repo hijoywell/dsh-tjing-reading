@@ -1,8 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 31">
+  <!--
+    竹居 glyph, redrawn as vectors (the original was a 29x31 bitmap mask).
+    Left: one book leaning against the others, seen from its spine — the two
+    white slots are the bands inset in the spine.
+    Right: two books standing upright, seen from the front — each cover face is
+    a translucent panel between two solid edges.
+    Same viewBox as before, so the sidebar footprint is unchanged.
+  -->
+  <g fill="#666666">
+    <!-- right book, front view: translucent cover between two solid edges -->
+    <rect x="16.9" y="3.7" width="4.6" height="25.5" rx="0.9" opacity="0.28"/>
+    <rect x="16.9" y="3.7" width="1.25" height="25.5" rx="0.6"/>
+    <rect x="20.25" y="3.7" width="1.25" height="25.5" rx="0.6"/>
+
+    <!-- second book, same construction, slightly narrower -->
+    <rect x="22.7" y="3.7" width="4.2" height="25.5" rx="0.9" opacity="0.28"/>
+    <rect x="22.7" y="3.7" width="1.2" height="25.5" rx="0.6"/>
+    <rect x="25.7" y="3.7" width="1.2" height="25.5" rx="0.6"/>
+
+    <!-- left book, spine view: leaning, two inset bands -->
+    <g mask="url(#bands)">
+      <path d="M8.6 2.9
+               C11 2.6 13.8 3.1 14.7 3.9
+               C15.2 4.4 15.0 5.2 14.8 5.8
+               L9.9 26.6
+               C9.7 27.3 9.3 27.7 8.6 27.7
+               L3.3 27.8
+               C2.5 27.8 2.1 27.3 2.2 26.5
+               L6.9 4.6
+               C7.0 3.6 7.6 3.0 8.6 2.9 Z"/>
+    </g>
+  </g>
   <defs>
-    <mask id="g">
-      <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB0AAAAfCAYAAAAbW8YEAAACFklEQVR4nMWXu4tUMRTGf5MdEEVWfIFWgiDbbCNq4WN20EKwFBERV+1srP0PRAQFtxYrtVAsLC1slBkbRUTBBwgiiI/CRyM+EO8nR86FJSQZ8N4ZPwg3OTk5X5JzkpzbkcSkESbOSJl0GfAY+AHcBk4Bm1uZqKRcOaA0Pks6J2lK0hJJfUkhMX6XpOmU7RLpgsqYkXTW6ye9fkzSPUkHXX5J0gVJ85KGte1uYRN2F/oq4C2wwturgXXAT2ADsNLla4GlwAywvh6c8880MAs8dIIYj4Cv/CNCRr4TuAlsBdYAR4FrwBfvvxvp1xOrz9/iiVaxLEfaB3YAJ3xbrgKHgVXAN2BAA3Qz8h5wHtgHnHHZwP1oR2nYhDQkZGZ0I7AA7PftnQNuAXuBp8DHtkm3eSSa4SvAIeA9cBF40XRrc9tbHxUL+3kvFgQvPfSPFCbfidqL66G0UvNnjOCEhjuZ/iphr0pxxIIpYDt5vAbe0RAh4U+7QXJoFLU5UjufJQzGQdqbNGkYsdJPwPO2SWeB5QXdVNQ2Ju2P0B2Og7Q3QncsK91T0LO380nbpJv89S9FbdU26dwkjkpMOsqfcabQCumWgs534MEIO/XFHrsgpNxSk173xzmF+8AvWkTw72m/HCwfOu450Qfvu0HL6EZtI7rsxWBpy6vC+PoY2dfSHHvo3wDPgN+eqlpubNen5Vd/0fkff21/AE/GHBIUjTAOAAAAAElFTkSuQmCC" x="0" y="0" width="29" height="31"/>
+    <mask id="bands">
+      <rect x="-4" y="-4" width="37" height="39" fill="#fff"/>
+      <rect x="7.6" y="6.8" width="4.1" height="1.7" rx="0.5" fill="#000"/>
+      <rect x="6.3" y="9.8" width="3.7" height="1.7" rx="0.5" fill="#000"/>
     </mask>
   </defs>
-  <rect x="0" y="0" width="29" height="31" fill="#666666" mask="url(#g)"/>
 </svg>
