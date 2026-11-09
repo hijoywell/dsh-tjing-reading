@@ -85,10 +85,37 @@ try {
   assert.match(data.noteFamily, /serif/i, `note font is not serif: ${data.noteFamily}`);
   assert.ok(data.leftover, 'a bracket number without an entry must stay plain text');
   await send('Runtime.evaluate', { expression: 'document.fonts.ready', awaitPromise: true }, sessionId);
+  // Render the bubble the way the reader does: dark card, arrow at the marker.
+  const bubble = await send('Runtime.evaluate', {
+    expression: `(() => {
+      const ref = document.querySelector('.bk-fnref');
+      const rect = ref.getBoundingClientRect();
+      const card = document.createElement('div');
+      card.className = 'bk-fnpop bk-fnpop-below';
+      card.dataset.arrow = 'center';
+      card.style.left = (rect.left + rect.width / 2) + 'px';
+      card.style.top = (rect.bottom + 10) + 'px';
+      card.style.transform = 'translate(-50%, 0)';
+      card.innerHTML = '<div class="bk-fnpop-body">湖南是当时全国农民运动的中心。</div>';
+      document.body.append(card);
+      const s = getComputedStyle(card);
+      const body = getComputedStyle(card.querySelector('.bk-fnpop-body'));
+      const arrow = getComputedStyle(card, '::after');
+      return { background: s.backgroundColor, color: s.color, font: s.fontFamily, fontSize: body.fontSize, arrowTop: arrow.top, arrowColor: arrow.borderBottomColor };
+    })()`,
+    returnByValue: true,
+  }, sessionId);
+  const pop = bubble.result.value;
+  assert.equal(pop.background, 'rgb(58, 58, 60)', `bubble background: ${pop.background}`);
+  assert.match(pop.font, /system-ui/i, `bubble font is not the system stack: ${pop.font}`);
+  assert.ok(parseFloat(pop.fontSize) >= 13.5, `bubble text too small: ${pop.fontSize}`);
+  assert.equal(pop.arrowTop, '-14px', `arrow missing: top=${pop.arrowTop}`);
+  // Let the fade-in finish before capturing, otherwise the card looks washed out.
+  await delay(320);
   const shot = await send('Page.captureScreenshot', { format: 'png' }, sessionId);
   const output = join(tmpdir(), 'dsh-footnote-preview.png');
   await writeFile(output, Buffer.from(shot.data, 'base64'));
-  console.log(`PASS refs=${data.refs.length} notes=${data.notes.length} body=${data.bodySize}px note=${data.noteSize}px`);
+  console.log(`PASS refs=${data.refs.length} notes=${data.notes.length} body=${data.bodySize}px note=${data.noteSize}px bubble=${pop.background}/${pop.fontSize}`);
   console.log('screenshot=' + output);
   await send('Browser.close');
 } finally { clearTimeout(timer); ws?.close(); child.kill(); }

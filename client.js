@@ -4013,12 +4013,15 @@ return { parseTextBook };
 .bk-selbtn:hover{background:rgba(255,255,255,.14)}
 /* 想法 editor — same card for a new note, an existing highlight and a bookmark. */
 .bk-notepop{position:fixed;z-index:45;width:min(330px,calc(100vw - 32px));transform:translateX(-50%);display:flex;flex-direction:column;gap:10px;padding:13px 14px;border-radius:14px;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);box-shadow:0 16px 40px rgba(0,0,0,.28);animation:bk-fade-in .14s ease}
-/* 脚注 bubble — the entry text, opened by tapping a [1] marker. */
-.bk-fnpop{position:fixed;z-index:46;width:min(340px,calc(100vw - 28px));transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;padding:11px 13px 12px;border-radius:12px;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);box-shadow:0 14px 36px rgba(0,0,0,.3);animation:bk-fade-in .12s ease}
-.bk-fnpop-head{display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.08em;opacity:.55;text-transform:uppercase}
-.bk-fnpop-body{font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",SimSun,Georgia,serif;font-size:13.5px;line-height:1.8;max-height:min(38vh,300px);overflow-y:auto;white-space:pre-wrap;word-break:break-word}
-.bk-fnpop-close{margin-left:auto;border:none;background:transparent;color:inherit;cursor:pointer;opacity:.6;padding:0 2px;font-size:14px;line-height:1}
-.bk-fnpop-close:hover{opacity:1}
+/* 脚注 bubble — the entry text, opened by tapping a [1] marker. Dark card with a
+   small arrow pointing at the marker, system font, like a reading-app tooltip. */
+.bk-fnpop{position:fixed;z-index:46;width:max-content;max-width:min(320px,calc(100vw - 28px));padding:11px 14px 12px;border-radius:10px;background:#3a3a3c;color:#f4f4f5;box-shadow:0 12px 30px rgba(0,0,0,.34);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif;animation:bk-fade-in .12s ease}
+.bk-fnpop-body{font-size:14px;line-height:1.78;max-height:min(38vh,300px);overflow-y:auto;white-space:pre-wrap;word-break:break-word;letter-spacing:.01em}
+.bk-fnpop::after{content:"";position:absolute;left:50%;width:0;height:0;border:7px solid transparent;transform:translateX(-50%);pointer-events:none}
+.bk-fnpop[data-arrow="left"]::after{left:22px;transform:none}
+.bk-fnpop[data-arrow="right"]::after{left:auto;right:22px;transform:none}
+.bk-fnpop-above::after{bottom:-14px;border-top-color:#3a3a3c}
+.bk-fnpop-below::after{top:-14px;border-bottom-color:#3a3a3c}
 .bk-notepop-quote{font-size:12.5px;line-height:1.65;opacity:.7;max-height:62px;overflow:hidden;border-left:3px solid var(--bk-accent,#2f6f4f);padding-left:9px;white-space:pre-wrap;word-break:break-word}
 .bk-notepop-input{width:100%;min-height:76px;max-height:220px;resize:vertical;border:1px solid var(--bk-barBorder);border-radius:10px;background:transparent;color:inherit;font-family:inherit;font-size:14px;line-height:1.65;padding:8px 10px;outline:none}
 .bk-notepop-input:focus{border-color:var(--bk-accent,#2f6f4f)}
@@ -7216,13 +7219,20 @@ Noto Sans Tagalog
           ev.stopPropagation();
           const entry = document.getElementById(fnRef.getAttribute('data-fn') ?? '');
           const rect = fnRef.getBoundingClientRect();
-          const half = Math.min(170, (window.innerWidth || 1024) / 2 - 12);
+          const viewW = window.innerWidth || 1024;
+          const half = Math.min(170, viewW / 2 - 12);
+          const center = rect.left + rect.width / 2;
+          const left = Math.min(Math.max(center, half), viewW - half);
+          const above = rect.top > 170;
           setFnPop({
-            label: (fnRef.textContent ?? '').trim(),
             text: (entry?.textContent ?? '').trim(),
-            left: Math.min(Math.max(rect.left + rect.width / 2, half), (window.innerWidth || 1024) - half),
-            top: rect.top > 170 ? rect.top - 10 : rect.bottom + 10,
-            above: rect.top > 170,
+            left,
+            top: above ? rect.top - 10 : rect.bottom + 10,
+            above,
+            // Where the arrow sits: the card is centred on the marker, so the
+            // arrow only leaves the middle when the card had to be clamped to
+            // the viewport — then it points from the nearer edge.
+            arrow: center < half ? 'left' : center > viewW - half ? 'right' : 'center',
           });
           return;
         }
@@ -7689,7 +7699,8 @@ Noto Sans Tagalog
               }),
               lightbox && e(ImageLightbox, { src: lightbox, onClose: () => setLightbox(null) }),
               fnPop && e('div', {
-                className: 'bk-fnpop',
+                className: `bk-fnpop bk-fnpop-${fnPop.above ? 'above' : 'below'}`,
+                'data-arrow': fnPop.arrow,
                 style: {
                   left: `${fnPop.left}px`,
                   top: `${fnPop.top}px`,
@@ -7699,15 +7710,6 @@ Noto Sans Tagalog
                 role: 'dialog',
                 'aria-label': t('reader.footnote'),
               },
-                e('div', { className: 'bk-fnpop-head' },
-                  t('reader.footnote'),
-                  fnPop.label ? ` ${fnPop.label}` : '',
-                  e('button', {
-                    className: 'bk-fnpop-close', type: 'button',
-                    'aria-label': t('reader.markCancel'), title: t('reader.markCancel'),
-                    onClick: () => setFnPop(null),
-                  }, '✕'),
-                ),
                 e('div', { className: 'bk-fnpop-body' }, fnPop.text || '—'),
               ),
               menuOpen && !aiOpen && e(AIBubble, {
