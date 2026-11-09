@@ -2,3 +2,6 @@ node_modules/
 .DS_Store
 *.log
 .env
+
+# 本机发布脚本：只在本机使用，不进仓库
+tools/push-via-remote.ps1
