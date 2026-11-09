@@ -66,7 +66,7 @@ try {
       const noteFamily = notes.length ? getComputedStyle(notes[0]).fontFamily : '';
       return {
         refs: refs.map((el) => ({ label: el.textContent, target: el.getAttribute('data-fn'), exists: !!document.getElementById(el.getAttribute('data-fn')) })),
-        notes: notes.map((el) => ({ id: el.id, text: el.textContent.slice(0, 24) })),
+        notes: notes.map((el) => ({ id: el.id, text: el.textContent.slice(0, 24), popover: el.getAttribute('data-fn-text') })),
         bodySize, noteSize, noteFamily,
         leftover: mount.textContent.includes('[9]'),
         html,
@@ -84,6 +84,12 @@ try {
   assert.ok(data.noteSize < data.bodySize * 0.9, `note text is not smaller: ${data.noteSize} vs ${data.bodySize}`);
   assert.match(data.noteFamily, /serif/i, `note font is not serif: ${data.noteFamily}`);
   assert.ok(data.leftover, 'a bracket number without an entry must stay plain text');
+  // The bubble shows the note content only — the marker is the thing you tapped.
+  assert.deepEqual(data.notes.map((n) => n.popover), [
+    '湖南是当时全国农民运动的中心。',
+    '这里的统计数字引自当时的农会报告。',
+    '圈号形式的注释条目。',
+  ]);
   await send('Runtime.evaluate', { expression: 'document.fonts.ready', awaitPromise: true }, sessionId);
   // Render the bubble the way the reader does: dark card, arrow at the marker.
   const bubble = await send('Runtime.evaluate', {
@@ -96,7 +102,7 @@ try {
       card.style.left = (rect.left + rect.width / 2) + 'px';
       card.style.top = (rect.bottom + 10) + 'px';
       card.style.transform = 'translate(-50%, 0)';
-      card.innerHTML = '<div class="bk-fnpop-body">湖南是当时全国农民运动的中心。</div>';
+      card.innerHTML = '<div class="bk-fnpop-body">' + (ref.getAttribute('data-fn') ? (document.getElementById(ref.getAttribute('data-fn')).getAttribute('data-fn-text')) : '') + '</div>';
       document.body.append(card);
       const s = getComputedStyle(card);
       const body = getComputedStyle(card.querySelector('.bk-fnpop-body'));

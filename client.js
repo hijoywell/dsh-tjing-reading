@@ -3001,6 +3001,10 @@ return { parseTextBook };
         if (!key) continue;
         el.classList.add('bk-fn');
         el.setAttribute('id', `bk-fn-${index}-${key}`);
+        // The bubble shows the entry's content only; the leading marker is
+        // already visible in the text as the button the reader tapped.
+        const body = text.slice(match[0].length).replace(/^\s*[：:.．、,，\-—]?\s*/, '');
+        el.setAttribute('data-fn-text', body || text);
         fnBlocks.push({ key, text });
       }
       if (fnBlocks.length) {
@@ -7225,7 +7229,7 @@ Noto Sans Tagalog
           const left = Math.min(Math.max(center, half), viewW - half);
           const above = rect.top > 170;
           setFnPop({
-            text: (entry?.textContent ?? '').trim(),
+            text: (entry?.getAttribute('data-fn-text') ?? entry?.textContent ?? '').trim(),
             left,
             top: above ? rect.top - 10 : rect.bottom + 10,
             above,
