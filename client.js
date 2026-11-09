@@ -130,6 +130,20 @@ window.__ModuleLoader__.load({
       'reader.pdfJump': '跳到第几页',
       'reader.pdfGo': '跳转',
       'reader.copy': '复制',
+      'reader.translate': '翻译',
+      'reader.translateHint': '把选中内容翻译成中文',
+      'reader.translateTitle': '翻译',
+      'reader.translateOriginal': '原文',
+      'reader.translateResult': '译文',
+      'reader.translateLoading': '正在翻译…',
+      'reader.translateFailed': '翻译失败',
+      'reader.translateCopy': '复制译文',
+      'reader.translateCopied': '已复制',
+      'reader.translateRetry': '重试',
+      'reader.translateToZh': '中文',
+      'reader.translateToEn': 'English',
+      'reader.translateNoModel': '还没有可用的模型。请在宿主设置里配置一个模型后再翻译。',
+      'reader.translateTruncated': '选中的内容较长，只翻译了前 {n} 个字符。',
       'reader.highlight': '高亮',
       'reader.pdfBookmarksEmpty': '还没有书签，点右上角的书签按钮就能记下当前页',
       'reader.notesEmpty': '还没有书签，点顶部的书签按钮就能记下这一页',
@@ -261,6 +275,20 @@ window.__ModuleLoader__.load({
       'reader.pdfJump': 'Go to page',
       'reader.pdfGo': 'Go',
       'reader.copy': 'Copy',
+      'reader.translate': 'Translate',
+      'reader.translateHint': 'Translate the selection into Chinese',
+      'reader.translateTitle': 'Translation',
+      'reader.translateOriginal': 'Original',
+      'reader.translateResult': 'Translation',
+      'reader.translateLoading': 'Translating…',
+      'reader.translateFailed': 'Translation failed',
+      'reader.translateCopy': 'Copy translation',
+      'reader.translateCopied': 'Copied',
+      'reader.translateRetry': 'Retry',
+      'reader.translateToZh': '中文',
+      'reader.translateToEn': 'English',
+      'reader.translateNoModel': 'No model is available yet. Configure a model in the host settings, then translate again.',
+      'reader.translateTruncated': 'The selection is long; only the first {n} characters were translated.',
       'reader.highlight': 'Highlight',
       'reader.pdfBookmarksEmpty': 'No bookmarks yet — the bookmark button in the corner marks the current page',
       'reader.notesEmpty': 'No bookmarks yet — the bookmark button in the bar marks this page',
@@ -315,6 +343,14 @@ window.__ModuleLoader__.load({
     // Four-point sparkle: the AI affordance, and the send arrow inside the panel.
     const ICON_SPARK = ['M11 3.6l1.55 4.05L16.6 9.2l-4.05 1.55L11 14.8l-1.55-4.05L5.4 9.2l4.05-1.55z', 'M17.9 3.4l.62 1.62 1.62.62-1.62.62-.62 1.62-.62-1.62-1.62-.62 1.62-.62z'];
     const ICON_SEND = ['M12 19.2V5.2', 'M6.4 10.8L12 5.2l5.6 5.6'];
+    // 翻译: a 文-like stroke pair plus an A, the usual "translate" reading.
+    const ICON_TRANSLATE = [
+      'M3.6 6.4h8.4',
+      'M8 6.4c0 4.2-1.7 7.2-4.6 9.2',
+      'M4.9 10.2c1.2 2.7 3.1 4.6 5.7 5.7',
+      'M13.2 19l3.5-9 3.5 9',
+      'M14.6 15.8h4.2',
+    ];
     // The floating entry's mark: an "Ai" wordmark whose i-dot is a sparkle.
     const MARK_AI_A = ['M5.4 16.9L9.8 7.1', 'M9.8 7.1L14.2 16.9', 'M6.9 13.4h5.8'];
     const MARK_AI_I = ['M16.9 11.4v5.5'];
@@ -750,8 +786,8 @@ window.__ModuleLoader__.load({
     ];
     const THEMES = [
       { id: 'white', bg: '#ffffff', text: '#262626', muted: '#8a8a8a', accent: '#2f6f4f', bar: 'rgba(255,255,255,.97)', barText: '#262626', barBorder: 'rgba(0,0,0,.08)' },
-      { id: 'sepia', bg: '#f5edda', text: '#40382a', muted: '#a09477', accent: '#2f6f4f', bar: 'rgba(245,237,218,.97)', barText: '#40382a', barBorder: 'rgba(64,56,42,.12)' },
-      { id: 'green', bg: '#e2ece0', text: '#2c332c', muted: '#7f8f7f', accent: '#2f6f4f', bar: 'rgba(226,236,224,.97)', barText: '#2c332c', barBorder: 'rgba(44,51,44,.12)' },
+      { id: 'sepia', bg: '#f5f4ed', text: '#40382a', muted: '#a09b8c', accent: '#2f6f4f', bar: 'rgba(245,244,237,.97)', barText: '#40382a', barBorder: 'rgba(64,56,42,.12)' },
+      { id: 'green', bg: '#c7edcc', text: '#26302a', muted: '#6f8375', accent: '#2f6f4f', bar: 'rgba(199,237,204,.97)', barText: '#26302a', barBorder: 'rgba(46,74,54,.14)' },
       { id: 'dark', bg: '#181a1f', text: '#a8adb5', muted: '#6b717c', accent: '#6fbf8e', bar: 'rgba(24,26,31,.97)', barText: '#c9ced6', barBorder: 'rgba(255,255,255,.1)' },
     ];
     // 划线 colours. `light`/`dark` are the washes painted over the paper (they
@@ -1314,6 +1350,10 @@ window.__ModuleLoader__.load({
      * ------------------------------------------------------------------ */
     const AI_CHAT_PATH = '/api/bookshelf/ai/chat';
     const AI_MODELS_PATH = '/api/bookshelf/ai/models';
+    /** Selection translation: same SSE transport, no passage retrieval. */
+    const AI_TRANSLATE_PATH = '/api/bookshelf/ai/translate';
+    /** A translation longer than this is cut before it leaves the browser. */
+    const TRANSLATE_MAX_CHARS = 6000;
     const AI_CHUNK_CHARS = 520;
     const AI_TOP_CHUNKS = 6;
     const AI_CONTEXT_CHARS = 9000;
@@ -1617,8 +1657,8 @@ window.__ModuleLoader__.load({
     }
 
     /** POST one question and stream the answer back as SSE deltas. */
-    async function askBook(payload, { signal, onDelta }) {
-      const response = await fetch(AI_CHAT_PATH, {
+    async function askBook(payload, { signal, onDelta, path = AI_CHAT_PATH }) {
+      const response = await fetch(path, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
@@ -2175,11 +2215,22 @@ window.__ModuleLoader__.load({
 .bk-chapter-foot button{flex:1 1 0;max-width:340px;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;opacity:.75;font-size:13px;padding:9px 0;cursor:pointer}
 .bk-chapter-foot button:disabled{opacity:.3;cursor:default}
 .bk-chapter-foot button:not(:disabled):hover{opacity:1}
-.bk-topbar{position:absolute;left:0;right:0;top:0;z-index:20;display:flex;align-items:center;gap:6px;padding:10px 12px;background:var(--bk-bar);color:var(--bk-barText);border-bottom:1px solid var(--bk-barBorder);transform:translateY(0);transition:transform .22s ease,opacity .22s ease}
-.bk-topbar.bk-hidden{transform:translateY(-100%);opacity:0;pointer-events:none}
-.bk-topbar .bk-bar-title{flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Floating chrome, like the PDF reader's: two rounded cards that hug their own
+   contents at the two ends, instead of one strip stretched across the page. The
+   gap between them is just page, so nothing is drawn over text nobody needs.
+   The reader's text keeps a constant top inset, so the cards can come and go
+   without ever reflowing the chapter. */
+.bk-topbar{position:absolute;left:12px;right:12px;top:10px;z-index:20;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;pointer-events:none;transform:translateY(0);opacity:1;transition:transform .22s ease,opacity .22s ease}
+.bk-topbar.bk-hidden{transform:translateY(-160%);opacity:0}
+.bk-topbar.bk-hidden .bk-bargroup{pointer-events:none}
+.bk-bargroup{display:flex;align-items:center;gap:2px;min-width:0;padding:4px 6px;border-radius:14px;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);box-shadow:0 6px 20px rgba(0,0,0,.16);pointer-events:auto}
+/* The left card may grow with the chapter name, but never enough to touch the
+   right one: the title truncates instead. */
+.bk-bargroup-left{flex:0 1 auto;max-width:calc(100% - 132px)}
+.bk-bargroup-right{flex:none}
+.bk-topbar .bk-bar-title{flex:0 1 auto;min-width:0;padding:0 4px;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bk-topbar .bk-bar-sub{font-size:12px;opacity:.7;white-space:nowrap}
-.bk-themepop{position:absolute;top:54px;right:14px;z-index:26;display:flex;flex-direction:column;gap:12px;padding:14px 18px;border-radius:14px;background:var(--bk-bar);border:1px solid var(--bk-barBorder);box-shadow:0 12px 32px rgba(0,0,0,.18);animation:bk-fade-in .16s ease}
+.bk-themepop{position:absolute;top:58px;right:14px;z-index:26;display:flex;flex-direction:column;gap:12px;padding:14px 18px;border-radius:14px;background:var(--bk-bar);border:1px solid var(--bk-barBorder);box-shadow:0 12px 32px rgba(0,0,0,.18);animation:bk-fade-in .16s ease}
 .bk-themerow{display:flex;gap:16px;justify-content:space-between}
 /* Slim 5px track with a round thumb, but a 20px tall hit box so the thumb is
    easy to grab. --bk-fill (0-100%) paints the part left of the thumb. */
@@ -2234,6 +2285,33 @@ window.__ModuleLoader__.load({
 .bk-notepop-btn:hover{background:rgba(127,127,127,.14)}
 .bk-notepop-btn.bk-primary{border-color:transparent;background:var(--bk-accent,#2f6f4f);color:#fff}
 .bk-notepop-btn.bk-danger{color:#c0392b}
+/* 翻译 card — a modal over the page: source on top, streamed translation below. */
+.bk-tr-backdrop{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(12,14,18,.42);animation:bk-fade-in .12s ease}
+.bk-tr-card{width:min(560px,100%);max-height:min(78vh,660px);display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);box-shadow:0 24px 64px rgba(0,0,0,.36)}
+.bk-tr-head{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--bk-barBorder);flex:none}
+.bk-tr-title{font-size:14px;font-weight:600}
+.bk-tr-langs{display:flex;gap:2px;margin-left:auto;padding:2px;border-radius:9px;background:rgba(127,127,127,.14)}
+.bk-tr-lang{border:none;background:transparent;color:inherit;font-family:inherit;font-size:12.5px;line-height:1;padding:6px 10px;border-radius:7px;cursor:pointer;opacity:.68}
+.bk-tr-lang.bk-on{background:var(--bk-accent,#2f6f4f);color:#fff;opacity:1}
+.bk-tr-close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:none;border-radius:8px;background:transparent;color:inherit;cursor:pointer;opacity:.7}
+.bk-tr-close:hover{background:rgba(127,127,127,.16);opacity:1}
+.bk-tr-body{display:flex;flex-direction:column;gap:14px;padding:14px;overflow:auto;min-height:120px}
+.bk-tr-label{font-size:11.5px;letter-spacing:.05em;opacity:.5;margin-bottom:6px}
+.bk-tr-srctext{font-size:13px;line-height:1.75;opacity:.78;white-space:pre-wrap;word-break:break-word;max-height:130px;overflow:auto;border-left:3px solid var(--bk-accent,#2f6f4f);padding-left:10px}
+.bk-tr-text{font-size:15px;line-height:1.95;white-space:pre-wrap;word-break:break-word}
+.bk-tr-pending{font-size:13px;opacity:.6;display:flex;align-items:center;gap:8px}
+.bk-tr-dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.35;animation:bk-tr-pulse 1.05s ease-in-out infinite}
+.bk-tr-dot:nth-child(2){animation-delay:.16s}
+.bk-tr-dot:nth-child(3){animation-delay:.32s}
+@keyframes bk-tr-pulse{0%,100%{opacity:.2;transform:translateY(0)}50%{opacity:.9;transform:translateY(-2px)}}
+.bk-tr-error{font-size:13px;line-height:1.7;color:#d9534f;white-space:pre-wrap;word-break:break-word}
+.bk-tr-hint{font-size:11.5px;opacity:.5;margin-top:6px}
+.bk-tr-foot{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--bk-barBorder);flex:none}
+.bk-tr-spacer{flex:1}
+.bk-tr-btn{border:1px solid var(--bk-barBorder);border-radius:8px;background:transparent;color:inherit;font-family:inherit;font-size:13px;padding:6px 12px;cursor:pointer}
+.bk-tr-btn:hover{background:rgba(127,127,127,.14)}
+.bk-tr-btn:disabled{opacity:.45;cursor:default}
+.bk-tr-btn.bk-primary{border-color:transparent;background:var(--bk-accent,#2f6f4f);color:#fff}
 /* 笔记 drawer: bookmarks and highlights in one list, two tabs. */
 .bk-drawer.bk-notes-drawer{width:min(390px,88%)}
 .bk-notes-tabs{display:flex;gap:6px;padding:0 14px 10px;flex:none}
@@ -2247,7 +2325,7 @@ window.__ModuleLoader__.load({
 .bk-note-sub{font-size:11.5px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bk-note-thought{font-size:12.5px;opacity:.86;border-left:2px solid var(--bk-accent,#2f6f4f);padding-left:7px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .bk-note-empty{padding:28px 18px;font-size:13.5px;line-height:1.85;opacity:.6;text-align:center}
-.bk-fontpanel{position:absolute;right:14px;top:56px;z-index:25;width:max-content;max-width:min(340px,calc(100% - 28px));max-height:min(70dvh,520px);overflow-y:auto;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:9px;animation:bk-fade-in .18s ease;box-shadow:0 12px 32px rgba(0,0,0,.18)}
+.bk-fontpanel{position:absolute;right:14px;top:58px;z-index:25;width:max-content;max-width:min(340px,calc(100% - 28px));max-height:min(70dvh,520px);overflow-y:auto;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:9px;animation:bk-fade-in .18s ease;box-shadow:0 12px 32px rgba(0,0,0,.18)}
 @keyframes bk-fade-in{from{opacity:0}to{opacity:1}}
 .bk-fontpanel-row{display:flex;align-items:center;gap:10px}
 .bk-fontpanel-row .bk-row-label{font-size:12px;opacity:.72;width:52px;flex:none;white-space:nowrap}
@@ -2287,7 +2365,7 @@ window.__ModuleLoader__.load({
 .bk-dock-addbtn:hover{background:rgba(127,127,127,.14)}
 .bk-pdfview{flex:1;min-height:0;position:relative;overflow-y:auto;overscroll-behavior:contain;background:var(--bk-paper,#3a3d44)}
 .bk-pdfview-inner{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 12px 48px;min-height:100%}
-.bk-pdfpage{position:relative;flex:none;background:#fff;border-radius:2px;box-shadow:0 2px 14px rgba(0,0,0,.32);overflow:hidden}
+.bk-pdfpage{position:relative;flex:none;background:var(--bk-pdf-paper,#fff);border-radius:2px;box-shadow:0 2px 14px rgba(0,0,0,.32);overflow:hidden}
 .bk-pdfpage canvas{display:block;width:100%;height:100%}
 /* pdf.js text layer: invisible, selectable text laid over the canvas. */
 .bk-pdf-text{position:absolute;inset:0;overflow:hidden;line-height:1;text-align:initial;text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;z-index:2}
@@ -2764,29 +2842,34 @@ window.__ModuleLoader__.load({
      * Reader (阅读器)
      * ------------------------------------------------------------------ */
     /**
-     * The reading toolbar — top of the reader, previous style: back, contents,
-     * current chapter name, display settings and theme.
+     * The reading toolbar — two floating cards that hug their contents: navigation
+     * and the chapter name on the left, page counter and display controls on the
+     * right. Nothing is drawn across the middle, so the page stays visible.
      */
     function ReaderBar({ title, sub, page, hidden, tocOpen, onBack, onToc, onSettings, onTheme }) {
       return e('div', {
         className: `bk-topbar${hidden ? ' bk-hidden' : ''}`,
         onClick: (ev) => ev.stopPropagation(),
       },
-        e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.back'), title: t('reader.back'), onClick: onBack },
-          e(Icon, { paths: ICON_BACK, size: 16 })),
-        // 目录 also holds 书签 and 划线: one docked panel instead of three buttons.
-        e('button', {
-          className: `bk-barbtn${tocOpen ? ' bk-on' : ''}`, type: 'button',
-          'aria-label': t('reader.toc'), title: t('reader.toc'),
-          'aria-expanded': tocOpen ? 'true' : 'false',
-          onClick: onToc,
-        }, e(Icon, { paths: ICON_TOC, size: 16 })),
-        e('span', { className: 'bk-bar-title' }, sub || title),
-        page && e('span', { className: 'bk-bar-page' }, page),
-        e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.settings'), title: t('reader.settings'), onClick: onSettings },
-          e('span', { style: { fontSize: 15, fontWeight: 600, letterSpacing: 1 } }, 'Aa')),
-        e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.theme'), title: t('reader.theme'), onClick: onTheme },
-          e(Icon, { paths: ICON_SUN_RAYS, fillPaths: ICON_SUN_DISC, size: 18, strokeWidth: 2.1 })),
+        e('div', { className: 'bk-bargroup bk-bargroup-left' },
+          e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.back'), title: t('reader.back'), onClick: onBack },
+            e(Icon, { paths: ICON_BACK, size: 16 })),
+          // 目录 also holds 书签 and 划线: one docked panel instead of three buttons.
+          e('button', {
+            className: `bk-barbtn${tocOpen ? ' bk-on' : ''}`, type: 'button',
+            'aria-label': t('reader.toc'), title: t('reader.toc'),
+            'aria-expanded': tocOpen ? 'true' : 'false',
+            onClick: onToc,
+          }, e(Icon, { paths: ICON_TOC, size: 16 })),
+          e('span', { className: 'bk-bar-title' }, sub || title),
+        ),
+        e('div', { className: 'bk-bargroup bk-bargroup-right' },
+          page && e('span', { className: 'bk-bar-page' }, page),
+          e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.settings'), title: t('reader.settings'), onClick: onSettings },
+            e('span', { style: { fontSize: 15, fontWeight: 600, letterSpacing: 1 } }, 'Aa')),
+          e('button', { className: 'bk-barbtn', type: 'button', 'aria-label': t('reader.theme'), title: t('reader.theme'), onClick: onTheme },
+            e(Icon, { paths: ICON_SUN_RAYS, fillPaths: ICON_SUN_DISC, size: 18, strokeWidth: 2.1 })),
+        ),
       );
     }
 
@@ -2941,8 +3024,8 @@ window.__ModuleLoader__.load({
       }));
     }
 
-    function SelectionBar({ sel, themeId, onPick, onNote, onAsk, onDelete }) {
-      const half = 148;
+    function SelectionBar({ sel, themeId, onPick, onNote, onAsk, onTranslate, onDelete }) {
+      const half = 168;
       const left = clampToViewport(sel.rect.left + sel.rect.width / 2, half);
       const above = sel.rect.top > 96;
       const style = above
@@ -2955,6 +3038,13 @@ window.__ModuleLoader__.load({
         e('span', { className: 'bk-selbar-sep' }),
         e('button', { className: 'bk-selbtn', type: 'button', onClick: onNote },
           e(Icon, { paths: ICON_NOTES, size: 15 }), t('reader.markNote')),
+        // 翻译: opens the translation card for the selected passage.
+        e('button', {
+          className: 'bk-selbtn bk-translate', type: 'button',
+          title: t('reader.translateHint'), 'aria-label': t('reader.translate'),
+          onClick: onTranslate,
+        },
+          e(Icon, { paths: ICON_TRANSLATE, size: 15, strokeWidth: 1.6 }), t('reader.translate')),
         // 问 AI: hands the selection to the AI column, opening it if it is shut.
         e('button', {
           className: 'bk-selbtn bk-askai', type: 'button',
@@ -3005,6 +3095,159 @@ window.__ModuleLoader__.load({
           draft.id && e('button', { className: 'bk-notepop-btn bk-danger', type: 'button', onClick: () => onDelete(draft.id) }, t('reader.markDelete')),
           e('button', { className: 'bk-notepop-btn', type: 'button', onClick: onClose }, t('reader.markCancel')),
           e('button', { className: 'bk-notepop-btn bk-primary', type: 'button', onClick: () => onSave({ text, color }) }, t('reader.markSave')),
+        ),
+      );
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 翻译 — the selection toolbar hands over a passage, the Host's model
+     * route translates it and the card shows the result as it streams in.
+     *
+     * Chinese is the default target, which is what 「翻译」 promises on a
+     * foreign-language passage; the two chips at the top re-run the request
+     * in place for the other direction (a Chinese selection, translated out).
+     * The request carries the same model the reader picked for 「问书」, so a
+     * Harness with several providers translates on the route the reader chose.
+     * ------------------------------------------------------------------ */
+    function TranslateDialog({ text, onClose }) {
+      const [target, setTarget] = useState('zh');
+      const [status, setStatus] = useState('loading'); // loading | streaming | done | error
+      const [output, setOutput] = useState('');
+      const [error, setError] = useState(null);
+      const [copied, setCopied] = useState(false);
+      const abortRef = useRef(null);
+      const outRef = useRef('');
+
+      const raw = String(text ?? '').trim();
+      const truncated = raw.length > TRANSLATE_MAX_CHARS;
+      const source = truncated ? raw.slice(0, TRANSLATE_MAX_CHARS) : raw;
+
+      const run = useCallback((lang) => {
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+        outRef.current = '';
+        setOutput('');
+        setError(null);
+        setCopied(false);
+        setStatus('loading');
+        askBook({ text: source, target: lang, model: loadAiModel() ?? undefined }, {
+          signal: controller.signal,
+          path: AI_TRANSLATE_PATH,
+          onDelta: (delta) => {
+            outRef.current += delta;
+            setOutput(outRef.current);
+            setStatus('streaming');
+          },
+        }).then(() => {
+          if (outRef.current.trim() === '') {
+            setError(t('reader.translateFailed'));
+            setStatus('error');
+          } else {
+            setStatus('done');
+          }
+        }).catch((err) => {
+          if (err?.name === 'AbortError') return;
+          setError(String(err?.message ?? err));
+          setStatus('error');
+        });
+      }, [source]);
+
+      useEffect(() => {
+        run(target);
+        return () => abortRef.current?.abort();
+      }, [run, target]);
+
+      useEffect(() => {
+        const onKey = (ev) => {
+          if (ev.key !== 'Escape') return;
+          ev.stopPropagation();
+          onClose();
+        };
+        document.addEventListener('keydown', onKey, true);
+        return () => document.removeEventListener('keydown', onKey, true);
+      }, [onClose]);
+
+      const copy = async () => {
+        if (output === '') return;
+        try {
+          await navigator.clipboard.writeText(output);
+        } catch {
+          const area = document.createElement('textarea');
+          area.value = output;
+          area.style.position = 'fixed';
+          area.style.opacity = '0';
+          document.body.appendChild(area);
+          area.select();
+          try { document.execCommand('copy'); } catch { /* ignore */ }
+          document.body.removeChild(area);
+        }
+        setCopied(true);
+      };
+
+      const chip = (lang, label) => e('button', {
+        type: 'button',
+        className: `bk-tr-lang${target === lang ? ' bk-on' : ''}`,
+        'aria-pressed': target === lang ? 'true' : 'false',
+        onClick: () => { if (target !== lang) setTarget(lang); },
+      }, label);
+
+      return e('div', {
+        className: 'bk-tr-backdrop',
+        onPointerDown: (ev) => ev.stopPropagation(),
+        onPointerUp: (ev) => ev.stopPropagation(),
+        onClick: (ev) => { ev.stopPropagation(); if (ev.target === ev.currentTarget) onClose(); },
+      },
+        e('div', {
+          className: 'bk-tr-card', role: 'dialog', 'aria-modal': 'true',
+          'aria-label': t('reader.translateTitle'),
+        },
+          e('div', { className: 'bk-tr-head' },
+            e(Icon, { paths: ICON_TRANSLATE, size: 16 }),
+            e('span', { className: 'bk-tr-title' }, t('reader.translateTitle')),
+            e('div', { className: 'bk-tr-langs' },
+              chip('zh', t('reader.translateToZh')),
+              chip('en', t('reader.translateToEn')),
+            ),
+            e('button', {
+              className: 'bk-tr-close', type: 'button',
+              'aria-label': t('reader.markCancel'), title: t('reader.markCancel'),
+              onClick: onClose,
+            }, e(Icon, { paths: ICON_CLOSE, size: 15 })),
+          ),
+          e('div', { className: 'bk-tr-body' },
+            e('div', null,
+              e('div', { className: 'bk-tr-label' }, t('reader.translateOriginal')),
+              e('div', { className: 'bk-tr-srctext' }, source),
+              truncated && e('div', { className: 'bk-tr-hint' },
+                t('reader.translateTruncated', { n: TRANSLATE_MAX_CHARS })),
+            ),
+            e('div', null,
+              e('div', { className: 'bk-tr-label' }, t('reader.translateResult')),
+              status === 'error'
+                ? e('div', { className: 'bk-tr-error' }, `${t('reader.translateFailed')}：${error ?? ''}`)
+                : output !== ''
+                  ? e('div', { className: 'bk-tr-text' }, output)
+                  : e('div', { className: 'bk-tr-pending' },
+                    e('span', { className: 'bk-tr-dot' }),
+                    e('span', { className: 'bk-tr-dot' }),
+                    e('span', { className: 'bk-tr-dot' }),
+                    t('reader.translateLoading')),
+            ),
+          ),
+          e('div', { className: 'bk-tr-foot' },
+            status === 'error' && e('button', {
+              className: 'bk-tr-btn', type: 'button', onClick: () => run(target),
+            }, t('reader.translateRetry')),
+            e('span', { className: 'bk-tr-spacer' }),
+            e('button', {
+              className: 'bk-tr-btn', type: 'button', disabled: output === '',
+              onClick: copy,
+            }, copied ? t('reader.translateCopied') : t('reader.translateCopy')),
+            e('button', {
+              className: 'bk-tr-btn bk-primary', type: 'button', onClick: onClose,
+            }, t('reader.markCancel')),
+          ),
         ),
       );
     }
@@ -4081,11 +4324,14 @@ Noto Sans Tagalog
             canvas.width = Math.max(1, Math.floor(viewport.width * dpr));
             canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // No white underlay: the page card behind the canvas carries the
+            // theme's paper colour, so a text/vector PDF reads on sepia or green
+            // paper like the EPUB does. A scanned PDF is one full-page image and
+            // paints over all of it, so it is unaffected.
             await page.render({
               canvasContext: ctx,
               viewport,
+              background: 'rgba(0,0,0,0)',
               transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
             }).promise;
             // Text layer: transparent, absolutely positioned spans over the canvas,
@@ -4161,7 +4407,7 @@ Noto Sans Tagalog
         marked && e('div', { key: 'ribbon', className: 'bk-pdf-ribbon', 'aria-hidden': 'true' }));
     }
 
-    function PdfReader({ record, prefs, onBack, onProgress, marks, onMarkAdd, onMarkUpdate, onMarkRemove }) {
+    function PdfReader({ record, prefs, setPrefs, onBack, onProgress, marks, onMarkAdd, onMarkUpdate, onMarkRemove }) {
       const theme = themeOf(prefs.themeId);
       const { aiOpen, setAiOpen, aiClosing, requestClose } = useAiColumn();
       const [pdf, setPdf] = useState(null);
@@ -4171,6 +4417,8 @@ Noto Sans Tagalog
       const [zoom, setZoom] = useState(1);
       const [page, setPage] = useState(1);
       const [hud, setHud] = useState(false);
+      // 背景 popover, same swatches as the EPUB reader.
+      const [themeOpen, setThemeOpen] = useState(false);
       const [viewW, setViewW] = useState(0);
       // 目录 is a docked panel, not a popup: it stays open (and is remembered)
       // until the 目录 button is pressed again.
@@ -4462,6 +4710,8 @@ Noto Sans Tagalog
       // Selecting text inside the pages floats the selection bar (复制 / 高亮 /
       // 问 AI / 书签). ⌘/Ctrl+C keeps working too.
       const [selBar, setSelBar] = useState(null);
+      // 翻译: the passage whose translation card is open, or null.
+      const [tr, setTr] = useState(null);
       useEffect(() => {
         const onSelectionChange = () => {
           const sel = window.getSelection?.();
@@ -4574,6 +4824,13 @@ Noto Sans Tagalog
         clearSelection();
         setAiOpen(true);
       }, [selBar, setAiOpen]);
+
+      /** 翻译: open the translation card for the selection (Chinese by default). */
+      const translateSelection = useCallback(() => {
+        if (!selBar?.text) return;
+        setTr({ text: selBar.text });
+        clearSelection();
+      }, [selBar]);
       useEffect(() => () => { if (hudTimer.current) clearTimeout(hudTimer.current); }, []);
 
       // Reveal the controls once on open so the contents / bookmark buttons are discoverable.
@@ -4626,7 +4883,7 @@ Noto Sans Tagalog
 
       return e('div', {
         className: 'bk-reader',
-        style: { background: theme.bg, color: theme.text, '--bk-paper': theme.bg, '--bk-bar': theme.bar, '--bk-barText': theme.barText, '--bk-barBorder': theme.barBorder, '--bk-muted': theme.muted, '--bk-accent': theme.accent ?? '#2f6f4f' },
+        style: { background: theme.bg, color: theme.text, '--bk-paper': theme.bg, '--bk-pdf-paper': theme.id === 'dark' ? '#ffffff' : theme.bg, '--bk-bar': theme.bar, '--bk-barText': theme.barText, '--bk-barBorder': theme.barBorder, '--bk-muted': theme.muted, '--bk-accent': theme.accent ?? '#2f6f4f' },
       },
         e('div', { className: 'bk-reader-main' },
           e('div', { className: 'bk-reader-body' },
@@ -4643,7 +4900,7 @@ Noto Sans Tagalog
                 : e('div', {
                   className: 'bk-pdfview', ref: scrollRef,
                   onMouseMove: showHud,
-                  onClick: toggleHud,
+                  onClick: () => { setThemeOpen(false); toggleHud(); },
                 },
                   e('div', { className: 'bk-pdfview-inner' },
                     !pdf && !metrics.length && e('div', { className: 'bk-pdf-loading' }, t('reader.loading')),
@@ -4689,6 +4946,12 @@ Noto Sans Tagalog
               ),
               e('div', { className: `bk-pdf-bar bk-pdf-bar-right${hud ? ' on' : ''}` },
                 e('button', {
+                  className: `bk-pdf-fab${themeOpen ? ' bk-open' : ''}`, type: 'button',
+                  'aria-label': t('reader.theme'), title: t('reader.theme'),
+                  'aria-expanded': themeOpen ? 'true' : 'false',
+                  onClick: (ev) => { ev.stopPropagation(); setThemeOpen((v) => !v); },
+                }, e(Icon, { paths: ICON_SUN_RAYS, fillPaths: ICON_SUN_DISC, size: 17, strokeWidth: 2.1 })),
+                e('button', {
                   className: `bk-pdf-fab${bookmarkHere ? ' bk-on' : ''}`, type: 'button',
                   'aria-label': bookmarkHere ? t('reader.bookmarkRemove') : t('reader.bookmarkAdd'),
                   title: bookmarkHere ? t('reader.bookmarkRemove') : t('reader.bookmarkAdd'),
@@ -4717,6 +4980,11 @@ Noto Sans Tagalog
                   type: 'button', className: 'bk-pdf-selbar-ai',
                   onClick: askAboutSelection,
                 }, e(Icon, { paths: ICON_SPARK, size: 13, strokeWidth: 1.7 }), t('reader.askAi')),
+                e('button', {
+                  type: 'button', className: 'bk-pdf-selbar-ai',
+                  onClick: translateSelection,
+                  title: t('reader.translateHint'),
+                }, e(Icon, { paths: ICON_TRANSLATE, size: 13, strokeWidth: 1.7 }), t('reader.translate')),
                 e('span', { className: 'bk-pdf-selbar-sep' }),
                 e('button', {
                   type: 'button',
@@ -4727,6 +4995,10 @@ Noto Sans Tagalog
               // Same reveal rule as the rest of the floating controls (and as the EPUB
               // reader): the AI entry rides with the toolbar instead of floating alone.
               hud && !aiOpen && e(AIBubble, { onClick: () => setAiOpen(true) }),
+              hud && themeOpen && e(ThemePopover, {
+                prefs, setPrefs, onClose: () => setThemeOpen(false),
+              }),
+              tr && e(TranslateDialog, { text: tr.text, onClose: () => setTr(null) }),
             ),
           ),
         ),
@@ -4763,6 +5035,8 @@ Noto Sans Tagalog
       // 笔记 drawer, and the "jump to this mark" request.
       const [sel, setSel] = useState(null);
       const [draft, setDraft] = useState(null);
+      // 翻译: the passage whose translation card is open, or null.
+      const [tr, setTr] = useState(null);
       const [jumpTick, setJumpTick] = useState(0);
       const pendingJump = useRef(null);
       // 「问 AI」: one queued prompt for the AI column, consumed by the panel.
@@ -4929,8 +5203,15 @@ Noto Sans Tagalog
         setAiOpen(true);
       }, [sel, setAiOpen]);
 
-      const addHighlight = useCallback((color) => {
+      /** 翻译: open the translation card for the selection (Chinese by default). */
+      const translateSelection = useCallback(() => {
         if (!sel) return;
+        setTr({ text: sel.text });
+        window.getSelection?.()?.removeAllRanges();
+        setSel(null);
+      }, [sel]);
+
+      const addHighlight = useCallback((color) => {        if (!sel) return;
         if (sel.markId) {
           // The selection sits inside an existing mark: recolour it instead of
           // stacking a second one on the same words.
@@ -5388,7 +5669,7 @@ Noto Sans Tagalog
       }, [html, chapter, jumpTick, pageCount, colW, paged]);
 
       /** True for a pointer that started on chrome (bar, panels, drawer, lightbox). */
-      const onChrome = (target) => !!target?.closest?.('.bk-topbar,.bk-fontpanel,.bk-themepop,.bk-drawer,.bk-drawer-backdrop,.bk-dock-panel,.bk-lightbox,.bk-chapter-foot,.bk-aibubble,.bk-selbar,.bk-notepop');
+      const onChrome = (target) => !!target?.closest?.('.bk-topbar,.bk-fontpanel,.bk-themepop,.bk-drawer,.bk-drawer-backdrop,.bk-dock-panel,.bk-lightbox,.bk-chapter-foot,.bk-aibubble,.bk-selbar,.bk-notepop,.bk-tr-backdrop');
 
       const onPointerDownReader = (ev) => {
         swipeRef.current = { x: ev.clientX, y: ev.clientY, chrome: onChrome(ev.target) };
@@ -5464,10 +5745,12 @@ Noto Sans Tagalog
         '--bk-ls': `${prefs.letterSpacing ?? 0.5}px`,
         // The chapter foot still lines up with the column through this margin.
         '--bk-mx': pane.w ? `${padX}px` : `${COL_GUTTER}px`,
-        // The toolbar overlays the top of the reading surface; keep the first
-        // lines clear of it while it is open. Paged mode keeps a constant inset so
-        // the text never jumps when the bar toggles.
-        paddingTop: paged ? '56px' : (menuOpen ? '62px' : '28px'),
+        // The toolbar floats over the top of the reading surface, so the text keeps
+        // a constant inset to stay clear of it (10px margin + ~42px card + a little
+        // breathing room). It must NOT depend on `menuOpen`: growing the padding
+        // when the bar appears reflows the chapter and shoves the page down, which
+        // reads as a jolt every time you tap to read.
+        paddingTop: '60px',
         fontFamily: prefs.fontId === 'custom' && customStack
           ? `${fontStackFor(customStack)}, ${FONT_STACKS.default}`
           : FONT_STACKS[prefs.fontId] ?? FONT_STACKS.default,
@@ -5569,8 +5852,10 @@ Noto Sans Tagalog
                 onPick: addHighlight,
                 onNote: startNote,
                 onAsk: askAboutSelection,
+                onTranslate: translateSelection,
                 onDelete: () => deleteDraft(sel.markId),
               }),
+              tr && e(TranslateDialog, { text: tr.text, onClose: () => setTr(null) }),
               draft && e(NotePopover, {
                 draft, themeId: prefs.themeId,
                 onSave: saveDraft,
@@ -5895,7 +6180,7 @@ Noto Sans Tagalog
         open.record.kind === 'pdf' || !open.epub
           ? e(PdfReader, {
             key: open.record.id,
-            record: open.record, prefs, onBack: closeBook, onProgress: saveProgress,
+            record: open.record, prefs, setPrefs, onBack: closeBook, onProgress: saveProgress,
             marks,
             onMarkAdd: addMark,
             onMarkUpdate: updateMark,

@@ -9,6 +9,9 @@
 /** Authenticated Fetch route the browser posts questions to (`/api` + path). */
 const CHAT_PATH = '/api/bookshelf/ai/chat';
 const MODELS_PATH = '/api/bookshelf/ai/models';
+/** Translate a selected passage; same transport and fallback rules as chat. */
+const TRANSLATE_PATH = '/api/bookshelf/ai/translate';
+const MAX_TRANSLATE_CHARS = 6000;
 const MAX_QUESTION_CHARS = 4000;
 const MAX_PASSAGES = 12;
 const MAX_PASSAGE_CHARS = 6000;
@@ -304,12 +307,82 @@ async function handleChat(ctx, request, options) {
   return sseResponse(iterator, abort);
 }
 
+/** Target languages the reader's translate dialog can ask for. */
+const TRANSLATE_TARGETS = {
+  zh: '简体中文',
+  en: 'English',
+};
+
+function translateSystemPrompt(target) {
+  const name = TRANSLATE_TARGETS[target] ?? TRANSLATE_TARGETS.zh;
+  return [
+    `你是一名专业译者。把用户给出的文本翻译成${name}。`,
+    '',
+    '规则：',
+    '1. 只输出译文本身，不要解释、不要加「译文：」之类的前缀，也不要给译文加引号。',
+    '2. 保留原文的段落与换行；原文是一段就译一段，不要合并或拆开。',
+    '3. 人名、地名、术语用通行译法；第一次出现时可在括号里保留原词，只保留一次。',
+    '4. 原文里的引文、对话、斜体强调，译文里同样保留。',
+    '5. 原文本身就是目标语言时，原样返回，不要润色或改写。',
+    '6. 不要补充原文没有的信息，也不要省略任何句子。',
+  ].join('\n');
+}
+
+/** Translate one selected passage. Streams the translation back as SSE deltas. */
+async function handleTranslate(ctx, request, options) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'invalid-json' }, 400);
+  }
+  const text = clip(body?.text, MAX_TRANSLATE_CHARS).trim();
+  if (text === '') return jsonResponse({ error: 'empty-text', message: '没有可翻译的文本。' }, 400);
+  const target = body?.target === 'en' ? 'en' : 'zh';
+
+  const llm = ctx.get('llm');
+  if (!llm) {
+    return jsonResponse({ error: 'llm-unavailable', message: '这个 Harness 没有装载模型服务（ctx.llm）。' }, 503);
+  }
+
+  const abort = new AbortController();
+  if (request.signal) {
+    if (request.signal.aborted) abort.abort();
+    else request.signal.addEventListener('abort', () => abort.abort(), { once: true });
+  }
+
+  const picked = body?.model;
+  const requestOptions = picked && typeof picked.provider === 'string' && picked.provider !== ''
+    && typeof picked.model === 'string' && picked.model !== ''
+    ? { ...options, requested: { provider: picked.provider, model: picked.model } }
+    : options;
+  const routes = await orderRoutes(ctx, llm, requestOptions, abort.signal);
+  if (routes.length === 0) {
+    return jsonResponse({ error: 'model-unavailable', message: '还没有选择默认模型。' }, 503);
+  }
+
+  // A translation is roughly as long as its source; give the model room for it
+  // instead of the shorter answer budget 「AI 问书」 uses.
+  const maxTokens = Math.min(4000, Math.max(1200, Math.ceil(text.length * 1.1)));
+  const messages = [{ role: 'user', content: [{ type: 'text', text }] }];
+
+  const iterator = streamWithFallback(llm, routes.slice(0, MAX_ROUTE_ATTEMPTS), (route) => ({
+    provider: route.provider,
+    model: route.model,
+    system: translateSystemPrompt(target),
+    messages,
+    temperature: 0.1,
+    maxTokens,
+    signal: abort.signal,
+  }));
+  return sseResponse(iterator, abort);
+}
+
 /**
  * List every model the reader may pick, plus the route a question would use if
  * nothing is picked. The picker mirrors the Harness model selector: one flat
  * list tagged with its provider.
- */
-async function handleModels(ctx, options) {
+ */async function handleModels(ctx, options) {
   const llm = ctx.get('llm');
   if (!llm) {
     return jsonResponse({ error: 'llm-unavailable', message: '这个 Harness 没有装载模型服务（ctx.llm）。' }, 503);
@@ -610,6 +683,12 @@ export function apply(ctx, config = {}) {
       requestBody: 'buffered',
       fetch: () => handleModels(child, options),
     }), 'bookshelf: ask-the-book model list');
+    child.effect(() => child.connection.fetch.register({
+      path: TRANSLATE_PATH,
+      methods: ['POST'],
+      requestBody: 'buffered',
+      fetch: (request) => handleTranslate(child, request, options),
+    }), 'bookshelf: translate selection');
     child.effect(() => child.connection.fetch.register({
       path: FONTS_PATH,
       methods: ['POST'],
