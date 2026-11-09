@@ -1,8 +1,12 @@
 {
   "name": "dsh-tjing-reading",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
-  "description": "竹居 — 在 DSH 侧边栏打开 EPUB / PDF 阅读器，仿微信读书界面：目录、书签、划线、进度记忆，选中文本可一键翻译，并可用基于书本内容的 AI 问书助手。",
+  "description": "竹居 — 在 DSH 侧边栏阅读 EPUB、PDF、无 DRM 的 MOBI/AZW3 和 TXT，支持目录、书签、划线、进度记忆、选中文本翻译与 AI 问书。",
+  "scripts": {
+    "build:formats": "node tools/build-formats.mjs",
+    "test": "node --test tests/*.test.js"
+  },
   "license": "MIT",
   "author": "hijoywell",
   "homepage": "https://github.com/hijoywell/dsh-tjing-reading#readme",
@@ -19,6 +23,9 @@
     "dsh-plugin",
     "epub",
     "pdf",
+    "mobi",
+    "azw3",
+    "txt",
     "reader",
     "ebook",
     "bookshelf",
@@ -34,7 +41,8 @@
     "client.js",
     "cordis.patch.yml",
     "locale",
-    "icon.svg"
+    "icon.svg",
+    "vendor/foliate-js.LICENSE"
   ],
   "dsh": {
     "bundle": {
