@@ -12,6 +12,8 @@ const css = new Function('CODE_STACK', source.slice(source.indexOf('    const BO
 const markup = `<!doctype html><meta charset="utf-8"><style>${css}
 body{margin:0;background:#c7edcc;font-family:system-ui}
 .wrap{padding:40px 30px}</style>
+<style>/* Host-like global button reset, loaded after the plugin sheet. */
+button{border-radius:8px;border:.5px solid #ccc;padding:4px 10px;background:0 0}</style>
 <div class="wrap"><div class="bk-selbar" style="position:static;transform:none">
 ${['#f2cd55', '#7cc596', '#7cb0ee', '#ee97b4'].map((color, i) => `<button type="button" class="bk-swatch${i === 1 ? ' bk-on' : ''}" style="background:${color}" aria-label="c${i}"></button>`).join('')}
 <span class="bk-selbar-sep"></span><button class="bk-selbtn" type="button">想法</button></div></div>`;
@@ -47,6 +49,13 @@ try {
   const boxes = geometry.result.value;
   assert.equal(boxes.length, 4);
   for (const box of boxes) { assert.ok(Math.abs(box.w - 24) < 0.6 && Math.abs(box.h - 24) < 0.6, 'swatch is not a 24px circle'); }
+  // Shape must survive a host button reset: clip-path, not border-radius alone.
+  const shape = await send('Runtime.evaluate', {
+    expression: `(() => { const s = getComputedStyle(document.querySelectorAll('.bk-swatch')[0]); return { clip: s.clipPath, radius: s.borderRadius }; })()`,
+    returnByValue: true,
+  }, sessionId);
+  assert.match(String(shape.result.value.clip), /circle\(50%/, `clip-path missing: ${shape.result.value.clip}`);
+  assert.equal(shape.result.value.radius, '50%');
   const overlap = boxes[0].x + boxes[0].w - boxes[1].x;
   assert.ok(Math.abs(overlap - 12) < 1, `expected half overlap (12px), got ${overlap}`);
   for (let i = 1; i < boxes.length; i++) assert.ok(boxes[i].x > boxes[i - 1].x, 'swatches are not in a row');

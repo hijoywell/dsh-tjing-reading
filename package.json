@@ -1,6 +1,6 @@
 {
   "name": "dsh-tjing-reading",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "type": "module",
   "description": "竹居 — 在 DSH 侧边栏阅读 EPUB、PDF、无 DRM 的 MOBI/AZW3 和 TXT，支持目录、书签、划线、进度记忆、选中文本翻译与 AI 问书。",
   "scripts": {

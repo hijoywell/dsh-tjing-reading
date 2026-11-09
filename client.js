@@ -3914,14 +3914,18 @@ return { parseTextBook };
 .bk-selbar{position:fixed;z-index:44;display:flex;align-items:center;gap:3px;padding:5px 7px;border-radius:13px;background:rgba(32,33,36,.96);color:#f2f3f5;box-shadow:0 10px 26px rgba(0,0,0,.34);transform:translateX(-50%);animation:bk-fade-in .12s ease}
 /* 高亮色 — four circles stacked like a paint fan: each one is half-covered by
    its neighbour, so the row stays compact and the colours read as one object.
-   Hovering (or focusing) lifts one fully clear of the stack. */
-.bk-selbar .bk-swatch{position:relative;z-index:1;flex:none;width:24px;height:24px;margin-left:-15px;border:none;border-radius:50%;cursor:pointer;padding:0;box-shadow:0 0 0 1px rgba(32,33,36,.95),inset 0 0 0 1px rgba(255,255,255,.45);transition:transform .14s ease}
+   Hovering (or focusing) lifts one fully clear of the stack.
+   The silhouette is cut with clip-path, not border-radius alone: the Host ships
+   global button border-radius rules and one of them can win, which turned these
+   into rounded squares. clip-path cannot be overridden that way, and the outline
+   moves to a drop-shadow so it survives the clip. */
+.bk-selbar .bk-swatch{position:relative;z-index:1;flex:none;width:24px;height:24px;margin-left:-15px;box-sizing:border-box;border:none;border-radius:50%;-webkit-clip-path:circle(50% at 50% 50%);clip-path:circle(50% at 50% 50%);cursor:pointer;padding:0;filter:drop-shadow(0 0 1px rgba(32,33,36,.95));box-shadow:inset 0 0 0 1px rgba(255,255,255,.45);transition:transform .14s ease}
 .bk-selbar .bk-swatch:first-child{margin-left:0}
 .bk-selbar .bk-swatch:hover,.bk-selbar .bk-swatch:focus-visible{transform:scale(1.24);z-index:4}
 /* The active colour is marked with an inset ring, not a raised z-index: lifting
    it would cover the exposed half of the neighbour and make that colour
    unclickable. */
-.bk-selbar .bk-swatch.bk-on{box-shadow:0 0 0 1px rgba(32,33,36,.95),inset 0 0 0 2px #f2f3f5}
+.bk-selbar .bk-swatch.bk-on{box-shadow:inset 0 0 0 2px #f2f3f5}
 .bk-selbar-sep{width:1px;height:20px;background:rgba(255,255,255,.22);margin:0 3px}
 .bk-selbtn{display:inline-flex;align-items:center;gap:5px;border:none;background:transparent;color:inherit;font-size:13px;font-family:inherit;padding:5px 8px;border-radius:8px;cursor:pointer;white-space:nowrap}
 .bk-selbtn:hover{background:rgba(255,255,255,.14)}
