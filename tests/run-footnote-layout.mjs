@@ -24,7 +24,7 @@ const chapter = `<html><body>
 </body></html>`;
 const markup = `<!doctype html><meta charset="utf-8"><style>${css}
 body{margin:0;background:#c7edcc}
-.wrap{padding:26px 30px;max-width:620px;font-size:17px;line-height:1.9;--bk-muted:#5a6b5c;--bk-accent:#2f6f4f;--bk-barBorder:rgba(44,51,44,.12)}
+.wrap{padding:26px 30px;max-width:620px;font-size:17px;line-height:1.9;font-family:Georgia,"Songti SC",serif;--bk-muted:#5a6b5c;--bk-accent:#2f6f4f;--bk-barBorder:rgba(44,51,44,.12)}
 </style><div class="wrap"><div class="bk-content" id="mount"></div></div>`;
 const profile = await mkdtemp(join(tmpdir(), 'dsh-footnote-browser-'));
 const child = spawn(process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', ['--headless', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
@@ -64,10 +64,12 @@ try {
       const bodySize = parseFloat(getComputedStyle(body).fontSize);
       const noteSize = notes.length ? parseFloat(getComputedStyle(notes[0]).fontSize) : 0;
       const noteFamily = notes.length ? getComputedStyle(notes[0]).fontFamily : '';
+      const bodyFamily = getComputedStyle(body).fontFamily;
+      const noteOpacity = notes.length ? getComputedStyle(notes[0]).opacity : '';
       return {
         refs: refs.map((el) => ({ label: el.textContent, target: el.getAttribute('data-fn'), exists: !!document.getElementById(el.getAttribute('data-fn')) })),
         notes: notes.map((el) => ({ id: el.id, text: el.textContent.slice(0, 24), popover: el.getAttribute('data-fn-text') })),
-        bodySize, noteSize, noteFamily,
+        bodySize, noteSize, noteFamily, bodyFamily, noteOpacity,
         leftover: mount.textContent.includes('[9]'),
         html,
       };
@@ -82,7 +84,8 @@ try {
   for (const ref of data.refs) assert.ok(ref.exists, `dangling footnote ref ${ref.label}`);
   assert.equal(data.notes.length, 3);
   assert.ok(data.noteSize < data.bodySize * 0.9, `note text is not smaller: ${data.noteSize} vs ${data.bodySize}`);
-  assert.match(data.noteFamily, /serif/i, `note font is not serif: ${data.noteFamily}`);
+  assert.equal(data.noteFamily, data.bodyFamily, `note font should follow the reading font: ${data.noteFamily} vs ${data.bodyFamily}`);
+  assert.equal(data.noteOpacity, '1', `note text must not be translucent: ${data.noteOpacity}`);
   assert.ok(data.leftover, 'a bracket number without an entry must stay plain text');
   // The bubble shows the note content only — the marker is the thing you tapped.
   assert.deepEqual(data.notes.map((n) => n.popover), [
@@ -103,7 +106,7 @@ try {
       card.style.top = (rect.bottom + 10) + 'px';
       card.style.transform = 'translate(-50%, 0)';
       card.innerHTML = '<div class="bk-fnpop-body">' + (ref.getAttribute('data-fn') ? (document.getElementById(ref.getAttribute('data-fn')).getAttribute('data-fn-text')) : '') + '</div>';
-      document.body.append(card);
+      document.querySelector('.wrap').append(card);
       const s = getComputedStyle(card);
       const body = getComputedStyle(card.querySelector('.bk-fnpop-body'));
       const arrow = getComputedStyle(card, '::after');
@@ -113,7 +116,8 @@ try {
   }, sessionId);
   const pop = bubble.result.value;
   assert.equal(pop.background, 'rgb(58, 58, 60)', `bubble background: ${pop.background}`);
-  assert.match(pop.font, /system-ui/i, `bubble font is not the system stack: ${pop.font}`);
+  // The bubble must borrow the reading font, not impose app chrome type.
+  assert.equal(pop.font, 'Georgia, "Songti SC", serif', `bubble font does not inherit: ${pop.font}`);
   assert.ok(parseFloat(pop.fontSize) >= 13.5, `bubble text too small: ${pop.fontSize}`);
   assert.equal(pop.arrowTop, '-14px', `arrow missing: top=${pop.arrowTop}`);
   // Let the fade-in finish before capturing, otherwise the card looks washed out.

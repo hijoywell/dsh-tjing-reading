@@ -3932,9 +3932,10 @@ return { parseTextBook };
 .bk-content blockquote p,.bk-content .bk-quote p,.bk-content [class*="blockquot" i] p{margin:.45em 0;color:inherit;font-size:inherit}
 .bk-content .bk-quote-attrib{margin:.2em 0 1.4em;padding-right:2px;text-align:right;color:var(--bk-muted,inherit);font-size:.88em}
 .bk-content cite{color:var(--bk-muted,inherit);font-style:italic}
-/* 脚注: the entry reads as apparatus, not as body text — smaller, in a serif
-   face, quieter colour, with a hairline separating it from the chapter. */
-.bk-content .bk-fn{margin:.5em 0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",SimSun,Georgia,serif;font-size:.82em;line-height:1.75;letter-spacing:0;opacity:.76}
+/* 脚注: the entry reads as apparatus, not as body text — smaller, and set in
+   whatever face the reader chose, so it never fights the page. Full opacity;
+   the size step and the hairline above already separate it from the text. */
+.bk-content .bk-fn{margin:.5em 0;font-family:inherit;font-size:.76em;line-height:1.72;letter-spacing:normal}
 .bk-content .bk-fn::first-line{letter-spacing:0}
 .bk-content :not(.bk-fn) + .bk-fn{border-top:1px solid var(--bk-barBorder,rgba(127,127,127,.25));padding-top:.6em;margin-top:1.6em}
 /* 正文里的脚注标记: small superscript-looking button, not a link. */
@@ -4019,7 +4020,7 @@ return { parseTextBook };
 .bk-notepop{position:fixed;z-index:45;width:min(330px,calc(100vw - 32px));transform:translateX(-50%);display:flex;flex-direction:column;gap:10px;padding:13px 14px;border-radius:14px;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);box-shadow:0 16px 40px rgba(0,0,0,.28);animation:bk-fade-in .14s ease}
 /* 脚注 bubble — the entry text, opened by tapping a [1] marker. Dark card with a
    small arrow pointing at the marker, system font, like a reading-app tooltip. */
-.bk-fnpop{position:fixed;z-index:46;width:max-content;max-width:min(320px,calc(100vw - 28px));padding:11px 14px 12px;border-radius:10px;background:#3a3a3c;color:#f4f4f5;box-shadow:0 12px 30px rgba(0,0,0,.34);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif;animation:bk-fade-in .12s ease}
+.bk-fnpop{position:fixed;z-index:46;width:max-content;max-width:min(320px,calc(100vw - 28px));padding:11px 14px 12px;border-radius:10px;background:#3a3a3c;color:#f4f4f5;box-shadow:0 12px 30px rgba(0,0,0,.34);font-family:inherit;animation:bk-fade-in .12s ease}
 .bk-fnpop-body{font-size:14px;line-height:1.78;max-height:min(38vh,300px);overflow-y:auto;white-space:pre-wrap;word-break:break-word;letter-spacing:.01em}
 .bk-fnpop::after{content:"";position:absolute;left:50%;width:0;height:0;border:7px solid transparent;transform:translateX(-50%);pointer-events:none}
 .bk-fnpop[data-arrow="left"]::after{left:22px;transform:none}
@@ -5589,6 +5590,13 @@ Noto Sans Tagalog
       const clean = String(name ?? '').trim().replace(/["\\]/g, '');
       if (!clean) return '';
       return `"${clean}"`;
+    }
+
+    /** The family the chapter text is drawn in, so floating cards can match it. */
+    function readerFontFamily(prefs) {
+      const custom = String(prefs?.customFont ?? '').trim();
+      if (prefs?.fontId === 'custom' && custom) return `${fontStackFor(custom)}, ${FONT_STACKS.default}`;
+      return FONT_STACKS[prefs?.fontId] ?? FONT_STACKS.default;
     }
 
     function FontPanel({ prefs, setPrefs, onClose }) {
@@ -7709,6 +7717,9 @@ Noto Sans Tagalog
                   left: `${fnPop.left}px`,
                   top: `${fnPop.top}px`,
                   transform: `translate(-50%, ${fnPop.above ? '-100%' : '0'})`,
+                  // Same typeface as the chapter text, so the note reads as part
+                  // of the page rather than as app chrome.
+                  fontFamily: readerFontFamily(prefs),
                 },
                 onClick: (ev) => ev.stopPropagation(),
                 role: 'dialog',
