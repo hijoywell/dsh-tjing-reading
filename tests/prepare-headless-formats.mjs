@@ -10,7 +10,12 @@ const suite = await readFile(new URL('tests/browser-formats-check.tabbit.js', ro
 const a = source.indexOf('    // BEGIN GENERATED BOOK FORMATS');
 const b = source.indexOf('    // END GENERATED BOOK FORMATS', a);
 const h = source.indexOf('    async function chapterHtml(');
-const engine = source.slice(a, b);
+// Reproduce the real client lexical scope, not an isolated parser-only scope.
+// A stylesheet binding named CSS used to shadow the browser CSS.escape API.
+const styleStart = source.search(/    const (?:CSS|BOOK_STYLES) = `/);
+const styleEnd = source.indexOf('    const STYLE_NODE =', styleStart);
+if (styleStart < 0 || styleEnd < styleStart) throw new Error('Stylesheet scope marker missing');
+const engine = source.slice(a, b) + '\nconst CODE_STACK = "monospace";\n' + source.slice(styleStart, styleEnd);
 const renderer = source.slice(source.indexOf('    function dirname('), source.indexOf('    function parseXml(')) + '\n'
   + source.slice(h, source.indexOf('    /* ------------------------------------------------------------------ *', h));
 const fixtures = [
