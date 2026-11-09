@@ -133,15 +133,11 @@ window.__ModuleLoader__.load({
       'reader.translate': '翻译',
       'reader.translateHint': '把选中内容翻译成中文',
       'reader.translateTitle': '翻译',
-      'reader.translateOriginal': '原文',
-      'reader.translateResult': '译文',
       'reader.translateLoading': '正在翻译…',
       'reader.translateFailed': '翻译失败',
       'reader.translateCopy': '复制译文',
       'reader.translateCopied': '已复制',
       'reader.translateRetry': '重试',
-      'reader.translateToZh': '中文',
-      'reader.translateToEn': 'English',
       'reader.translateNoModel': '还没有可用的模型。请在宿主设置里配置一个模型后再翻译。',
       'reader.translateTruncated': '选中的内容较长，只翻译了前 {n} 个字符。',
       'reader.highlight': '高亮',
@@ -278,15 +274,11 @@ window.__ModuleLoader__.load({
       'reader.translate': 'Translate',
       'reader.translateHint': 'Translate the selection into Chinese',
       'reader.translateTitle': 'Translation',
-      'reader.translateOriginal': 'Original',
-      'reader.translateResult': 'Translation',
       'reader.translateLoading': 'Translating…',
       'reader.translateFailed': 'Translation failed',
       'reader.translateCopy': 'Copy translation',
       'reader.translateCopied': 'Copied',
       'reader.translateRetry': 'Retry',
-      'reader.translateToZh': '中文',
-      'reader.translateToEn': 'English',
       'reader.translateNoModel': 'No model is available yet. Configure a model in the host settings, then translate again.',
       'reader.translateTruncated': 'The selection is long; only the first {n} characters were translated.',
       'reader.highlight': 'Highlight',
@@ -2290,14 +2282,9 @@ window.__ModuleLoader__.load({
 .bk-tr-card{width:min(560px,100%);max-height:min(78vh,660px);display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:var(--bk-bar);color:var(--bk-barText);border:1px solid var(--bk-barBorder);box-shadow:0 24px 64px rgba(0,0,0,.36)}
 .bk-tr-head{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--bk-barBorder);flex:none}
 .bk-tr-title{font-size:14px;font-weight:600}
-.bk-tr-langs{display:flex;gap:2px;margin-left:auto;padding:2px;border-radius:9px;background:rgba(127,127,127,.14)}
-.bk-tr-lang{border:none;background:transparent;color:inherit;font-family:inherit;font-size:12.5px;line-height:1;padding:6px 10px;border-radius:7px;cursor:pointer;opacity:.68}
-.bk-tr-lang.bk-on{background:var(--bk-accent,#2f6f4f);color:#fff;opacity:1}
-.bk-tr-close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:none;border-radius:8px;background:transparent;color:inherit;cursor:pointer;opacity:.7}
+.bk-tr-close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;border:none;border-radius:8px;background:transparent;color:inherit;cursor:pointer;opacity:.7}
 .bk-tr-close:hover{background:rgba(127,127,127,.16);opacity:1}
-.bk-tr-body{display:flex;flex-direction:column;gap:14px;padding:14px;overflow:auto;min-height:120px}
-.bk-tr-label{font-size:11.5px;letter-spacing:.05em;opacity:.5;margin-bottom:6px}
-.bk-tr-srctext{font-size:13px;line-height:1.75;opacity:.78;white-space:pre-wrap;word-break:break-word;max-height:130px;overflow:auto;border-left:3px solid var(--bk-accent,#2f6f4f);padding-left:10px}
+.bk-tr-body{display:flex;flex-direction:column;gap:14px;padding:16px 18px;overflow:auto;min-height:120px}
 .bk-tr-text{font-size:15px;line-height:1.95;white-space:pre-wrap;word-break:break-word}
 .bk-tr-pending{font-size:13px;opacity:.6;display:flex;align-items:center;gap:8px}
 .bk-tr-dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.35;animation:bk-tr-pulse 1.05s ease-in-out infinite}
@@ -2311,7 +2298,6 @@ window.__ModuleLoader__.load({
 .bk-tr-btn{border:1px solid var(--bk-barBorder);border-radius:8px;background:transparent;color:inherit;font-family:inherit;font-size:13px;padding:6px 12px;cursor:pointer}
 .bk-tr-btn:hover{background:rgba(127,127,127,.14)}
 .bk-tr-btn:disabled{opacity:.45;cursor:default}
-.bk-tr-btn.bk-primary{border-color:transparent;background:var(--bk-accent,#2f6f4f);color:#fff}
 /* 笔记 drawer: bookmarks and highlights in one list, two tabs. */
 .bk-drawer.bk-notes-drawer{width:min(390px,88%)}
 .bk-notes-tabs{display:flex;gap:6px;padding:0 14px 10px;flex:none}
@@ -2363,7 +2349,7 @@ window.__ModuleLoader__.load({
 .bk-dock-panel .bk-drawer-list{padding:4px 6px 16px}
 .bk-dock-addbtn{margin:2px 6px 10px;padding:8px 10px;border:1px dashed var(--bk-barBorder,rgba(127,127,127,.4));border-radius:8px;background:transparent;color:inherit;font-family:inherit;font-size:13px;cursor:pointer;text-align:center;width:calc(100% - 12px)}
 .bk-dock-addbtn:hover{background:rgba(127,127,127,.14)}
-.bk-pdfview{flex:1;min-height:0;position:relative;overflow-y:auto;overscroll-behavior:contain;background:var(--bk-paper,#3a3d44)}
+.bk-pdfview{flex:1;min-height:0;min-width:0;position:relative;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;background:var(--bk-paper,#3a3d44)}
 .bk-pdfview-inner{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 12px 48px;min-height:100%}
 .bk-pdfpage{position:relative;flex:none;background:var(--bk-pdf-paper,#fff);border-radius:2px;box-shadow:0 2px 14px rgba(0,0,0,.32);overflow:hidden}
 .bk-pdfpage canvas{display:block;width:100%;height:100%}
@@ -3110,7 +3096,10 @@ window.__ModuleLoader__.load({
      * Harness with several providers translates on the route the reader chose.
      * ------------------------------------------------------------------ */
     function TranslateDialog({ text, onClose }) {
-      const [target, setTarget] = useState('zh');
+      // Always into Chinese: that is the point of the feature (read a foreign
+      // quote without leaving the page), and a two-chip picker in the header only
+      // added a decision nobody asked for.
+      const target = 'zh';
       const [status, setStatus] = useState('loading'); // loading | streaming | done | error
       const [output, setOutput] = useState('');
       const [error, setError] = useState(null);
@@ -3185,13 +3174,6 @@ window.__ModuleLoader__.load({
         setCopied(true);
       };
 
-      const chip = (lang, label) => e('button', {
-        type: 'button',
-        className: `bk-tr-lang${target === lang ? ' bk-on' : ''}`,
-        'aria-pressed': target === lang ? 'true' : 'false',
-        onClick: () => { if (target !== lang) setTarget(lang); },
-      }, label);
-
       return e('div', {
         className: 'bk-tr-backdrop',
         onPointerDown: (ev) => ev.stopPropagation(),
@@ -3205,25 +3187,17 @@ window.__ModuleLoader__.load({
           e('div', { className: 'bk-tr-head' },
             e(Icon, { paths: ICON_TRANSLATE, size: 16 }),
             e('span', { className: 'bk-tr-title' }, t('reader.translateTitle')),
-            e('div', { className: 'bk-tr-langs' },
-              chip('zh', t('reader.translateToZh')),
-              chip('en', t('reader.translateToEn')),
-            ),
             e('button', {
               className: 'bk-tr-close', type: 'button',
               'aria-label': t('reader.markCancel'), title: t('reader.markCancel'),
               onClick: onClose,
             }, e(Icon, { paths: ICON_CLOSE, size: 15 })),
           ),
+          // Only the translation: the source text is already on screen behind the
+          // dialog (it is what the user just selected), so repeating it here just
+          // halves the room the result gets.
           e('div', { className: 'bk-tr-body' },
             e('div', null,
-              e('div', { className: 'bk-tr-label' }, t('reader.translateOriginal')),
-              e('div', { className: 'bk-tr-srctext' }, source),
-              truncated && e('div', { className: 'bk-tr-hint' },
-                t('reader.translateTruncated', { n: TRANSLATE_MAX_CHARS })),
-            ),
-            e('div', null,
-              e('div', { className: 'bk-tr-label' }, t('reader.translateResult')),
               status === 'error'
                 ? e('div', { className: 'bk-tr-error' }, `${t('reader.translateFailed')}：${error ?? ''}`)
                 : output !== ''
@@ -3233,6 +3207,8 @@ window.__ModuleLoader__.load({
                     e('span', { className: 'bk-tr-dot' }),
                     e('span', { className: 'bk-tr-dot' }),
                     t('reader.translateLoading')),
+              truncated && e('div', { className: 'bk-tr-hint' },
+                t('reader.translateTruncated', { n: TRANSLATE_MAX_CHARS })),
             ),
           ),
           e('div', { className: 'bk-tr-foot' },
@@ -3240,13 +3216,12 @@ window.__ModuleLoader__.load({
               className: 'bk-tr-btn', type: 'button', onClick: () => run(target),
             }, t('reader.translateRetry')),
             e('span', { className: 'bk-tr-spacer' }),
+            // No 取消 button: the ✕ in the header, Esc and a click on the backdrop
+            // all close the dialog, and a redundant button only competed with 复制.
             e('button', {
               className: 'bk-tr-btn', type: 'button', disabled: output === '',
               onClick: copy,
             }, copied ? t('reader.translateCopied') : t('reader.translateCopy')),
-            e('button', {
-              className: 'bk-tr-btn bk-primary', type: 'button', onClick: onClose,
-            }, t('reader.markCancel')),
           ),
         ),
       );
@@ -4294,66 +4269,109 @@ Noto Sans Tagalog
       );
     }
 
+    // Serialize full-page paints per document. Each page's observer used to start
+    // its own render immediately, making complex slides compete on the UI thread.
+    const pdfPaintQueues = new WeakMap();
+    function queuePdfPaint(pdf, paint) {
+      const previous = pdfPaintQueues.get(pdf) ?? Promise.resolve();
+      const next = previous.catch(() => {}).then(() => new Promise((resolve) => {
+        // Yield between pages so input and scrolling get an event-loop turn.
+        setTimeout(resolve, 0);
+      })).then(paint);
+      pdfPaintQueues.set(pdf, next.catch(() => {}));
+      return next;
+    }
+
     function PdfCanvasPage({ pdf, num, scale, width, height, root, register, marked, highlights }) {
       const wrapRef = useRef(null);
       const canvasRef = useRef(null);
       const textRef = useRef(null);
-      const paintedRef = useRef(false);
-      const busyRef = useRef(false);
-
       useEffect(() => {
         register(num, wrapRef.current);
         return () => register(num, null);
-      }, [num]);
+      }, [num, register]);
 
       useEffect(() => {
         const el = wrapRef.current;
         const canvas = canvasRef.current;
         if (!el || !canvas || !pdf) return undefined;
         let cancelled = false;
+        let wanted = false;
+        // Per-scale state: an old render's finally must not unlock a new render.
+        let painted = false;
+        let busy = false;
+        let renderTask = null;
+        let textTask = null;
 
         const paint = async () => {
-          if (cancelled || paintedRef.current || busyRef.current) return;
-          busyRef.current = true;
+          if (cancelled || painted || busy) return;
+          busy = true;
           try {
-            const lib = await loadPdfjs();
-            const page = await pdf.getPage(num);
-            if (cancelled) return;
-            const viewport = page.getViewport({ scale });
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            canvas.width = Math.max(1, Math.floor(viewport.width * dpr));
-            canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
-            const ctx = canvas.getContext('2d');
-            // No white underlay: the page card behind the canvas carries the
-            // theme's paper colour, so a text/vector PDF reads on sepia or green
-            // paper like the EPUB does. A scanned PDF is one full-page image and
-            // paints over all of it, so it is unaffected.
-            await page.render({
-              canvasContext: ctx,
-              viewport,
-              background: 'rgba(0,0,0,0)',
-              transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
-            }).promise;
-            // Text layer: transparent, absolutely positioned spans over the canvas,
-            // so the page can be selected and copied like real text.
-            const holder = textRef.current;
-            if (holder && !cancelled) {
-              const textContent = await page.getTextContent();
-              if (cancelled) return;
-              holder.style.setProperty('--scale-factor', String(viewport.scale));
-              holder.textContent = '';
-              await lib.renderTextLayer({
-                textContentSource: textContent,
-                container: holder,
+            await queuePdfPaint(pdf, async () => {
+              // Skip obsolete work after a fast scroll or a zoom/unmount.
+              if (cancelled || !wanted) return;
+              const lib = await loadPdfjs();
+              const page = await pdf.getPage(num);
+              if (cancelled || !wanted) return;
+              const viewport = page.getViewport({ scale });
+              // Bound backing-store memory at high DPI/zoom without changing CSS
+              // dimensions, text selection coordinates or the reading position.
+              const dpr = Math.min(window.devicePixelRatio || 1, 2,
+                Math.sqrt(6000000 / Math.max(1, viewport.width * viewport.height)),
+                8192 / Math.max(1, viewport.width, viewport.height));
+              // Keep the visible bitmap intact while rendering the new scale.
+              // Resizing the visible canvas here would clear it immediately.
+              const buffer = document.createElement('canvas');
+              buffer.width = Math.max(1, Math.floor(viewport.width * dpr));
+              buffer.height = Math.max(1, Math.floor(viewport.height * dpr));
+              const ctx = buffer.getContext('2d');
+              // No white underlay: the page card behind the canvas carries the
+              // theme's paper colour, so a text/vector PDF reads on sepia or green
+              // paper like the EPUB does. A scanned PDF is one full-page image and
+              // paints over all of it, so it is unaffected.
+              renderTask = page.render({
+                canvasContext: ctx,
                 viewport,
-                textDivs: [],
-              }).promise;
-            }
-            if (!cancelled) paintedRef.current = true;
+                background: 'rgba(0,0,0,0)',
+                transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
+              });
+              await renderTask.promise;
+              renderTask = null;
+              // Text layer: transparent, absolutely positioned spans over the canvas,
+              // so the page can be selected and copied like real text.
+              const holder = textRef.current;
+              const textBuffer = document.createElement('div');
+              textBuffer.className = 'bk-pdf-text';
+              textBuffer.style.setProperty('--scale-factor', String(viewport.scale));
+              if (holder && !cancelled) {
+                const textContent = await page.getTextContent();
+                if (cancelled) return;
+                textTask = lib.renderTextLayer({
+                  textContentSource: textContent,
+                  container: textBuffer,
+                  viewport,
+                  textDivs: [],
+                });
+                await textTask.promise;
+                textTask = null;
+              }
+              if (cancelled) return;
+              // Commit bitmap and selection layer together, in one synchronous
+              // turn. The browser never paints an intermediate blank canvas.
+              canvas.width = buffer.width;
+              canvas.height = buffer.height;
+              canvas.getContext('2d').drawImage(buffer, 0, 0);
+              if (holder) {
+                holder.style.setProperty('--scale-factor', String(viewport.scale));
+                holder.replaceChildren(...textBuffer.childNodes);
+              }
+              buffer.width = buffer.height = 1;
+              painted = true;
+            });
           } catch (err) {
             /* A single broken page must not take the reader down. */
           } finally {
-            busyRef.current = false;
+            busy = false;
           }
         };
 
@@ -4361,15 +4379,16 @@ Noto Sans Tagalog
           const rootEl = root?.current;
           const rootRect = (rootEl ?? document.documentElement).getBoundingClientRect();
           for (const entry of entries) {
+            wanted = entry.isIntersecting;
             if (entry.isIntersecting) {
               paint();
-            } else if (paintedRef.current) {
+            } else if (painted) {
               // Far off-screen canvases are released again — a long comic keeps
               // dozens of pages in memory otherwise.
               const rect = entry.boundingClientRect;
               const far = Math.max(rootRect.top - rect.bottom, rect.top - rootRect.bottom) > rootRect.height * 2;
               if (far) {
-                paintedRef.current = false;
+                painted = false;
                 canvas.width = 1;
                 canvas.height = 1;
                 const holder = textRef.current;
@@ -4379,7 +4398,12 @@ Noto Sans Tagalog
           }
         }, { root: root?.current ?? null, rootMargin: '600px 0px' });
         io.observe(el);
-        return () => { cancelled = true; io.disconnect(); };
+        return () => {
+          cancelled = true;
+          io.disconnect();
+          renderTask?.cancel();
+          textTask?.cancel();
+        };
       }, [pdf, num, scale]);
 
       return e('div', {
@@ -4436,7 +4460,8 @@ Noto Sans Tagalog
       const askSeq = useRef(0);
       const [aiAsk, setAiAsk] = useState(null);
 
-      // 100% = fit width; the zoom steps scale the page relative to that.
+      // 100% uses the width captured on open (or an explicit fit-width click),
+      // not the live pane width. Sidebar toggles must not rescale the document.
       const fitScale = metrics.length && viewW
         ? Math.max(0.2, (viewW - 24) / metrics[0].w)
         : 1;
@@ -4474,15 +4499,20 @@ Noto Sans Tagalog
         return () => { alive = false; if (doc) { try { doc.destroy(); } catch { /* ignore */ } } };
       }, [record.id]);
 
-      // Width of the pane drives the fit-width scale.
+      // Capture the first visible width only. The observer is just a fallback
+      // for opening in a hidden pane, not a subscription to sidebar animations.
       useEffect(() => {
+        if (viewW > 0) return undefined;
         const el = scrollRef.current;
         if (!el) return undefined;
-        const ro = new ResizeObserver(() => setViewW(el.clientWidth));
+        const measure = () => {
+          if (el.clientWidth > 0) setViewW((previous) => previous || el.clientWidth);
+        };
+        const ro = new ResizeObserver(measure);
         ro.observe(el);
-        setViewW(el.clientWidth);
+        measure();
         return () => ro.disconnect();
-      }, [pdf]);
+      }, [pdf, viewW]);
 
       const register = useCallback((num, el) => {
         if (el) pageEls.current.set(num, el);
@@ -4569,11 +4599,22 @@ Noto Sans Tagalog
           // A hidden pane (display:none) reports height 0 and resets scrollTop;
           // reading a page out of that would overwrite the saved position.
           if (!root.clientHeight) return;
-          const rect = root.getBoundingClientRect();
+          const edge = root.getBoundingClientRect().top + 24;
+          // Page bottoms are ordered: binary search avoids measuring every page
+          // above the viewport on each scroll frame in a long workshop deck.
+          let lo = 1;
+          let hi = metrics.length;
           let cur = 1;
-          for (let num = 1; num <= metrics.length; num += 1) {
-            const el = pageEls.current.get(num);
-            if (el && el.getBoundingClientRect().bottom > rect.top + 24) { cur = num; break; }
+          while (lo <= hi) {
+            const mid = Math.floor((lo + hi) / 2);
+            const el = pageEls.current.get(mid);
+            if (!el) break;
+            if (el.getBoundingClientRect().bottom > edge) {
+              cur = mid;
+              hi = mid - 1;
+            } else {
+              lo = mid + 1;
+            }
           }
           setPage(cur);
         };
@@ -4848,6 +4889,10 @@ Noto Sans Tagalog
 
       const resetZoom = useCallback(() => {
         captureAnchor();
+        // Explicit fit-width action: unlike a sidebar toggle, this is allowed
+        // to change the baseline page dimensions.
+        const width = scrollRef.current?.clientWidth;
+        if (width > 0) setViewW(width);
         setZoom(1);
         showHud();
       }, [captureAnchor, showHud]);
@@ -4872,14 +4917,13 @@ Noto Sans Tagalog
       }, [stepZoom, pdf, error]);
 
       const toggleToc = useCallback(() => {
-        captureAnchor();
         setTocOpen((open) => {
           const next = !open;
           try { localStorage.setItem(TOC_KEY, next ? '1' : '0'); } catch { /* ignore */ }
           return next;
         });
         showHud();
-      }, [captureAnchor, showHud]);
+      }, [showHud]);
 
       return e('div', {
         className: 'bk-reader',
@@ -4902,10 +4946,18 @@ Noto Sans Tagalog
                   onMouseMove: showHud,
                   onClick: () => { setThemeOpen(false); toggleHud(); },
                 },
-                  e('div', { className: 'bk-pdfview-inner' },
+                  e('div', {
+                    className: 'bk-pdfview-inner',
+                    // Keep oversized pages reachable from the left edge rather
+                    // than centering them into negative, unscrollable overflow.
+                    style: {
+                      boxSizing: 'border-box',
+                      minWidth: `${Math.ceil(metrics.reduce((max, m) => Math.max(max, m.w * scale), 0)) + 24}px`,
+                    },
+                  },
                     !pdf && !metrics.length && e('div', { className: 'bk-pdf-loading' }, t('reader.loading')),
                     metrics.map((m, i) => e(PdfCanvasPage, {
-                      key: `${i + 1}:${scale.toFixed(4)}`,
+                      key: i + 1,
                       pdf,
                       num: i + 1,
                       scale,
