@@ -4320,8 +4320,9 @@ return { parseTextBook };
       }, [books, bookGroups, filter]);
 
       // Keep each format in its own section, including within custom groups.
+      // Section order is fixed and independent of import time.
       const sections = useMemo(() => {
-        return ['epub', 'mobi', 'azw3', 'txt', 'pdf'].map((kind) => ({
+        return ['epub', 'pdf', 'mobi', 'azw3', 'txt'].map((kind) => ({
           kind, label: kind.toUpperCase(), books: shown.filter((book) => (book.kind || 'epub') === kind),
         })).filter((section) => section.books.length > 0);
       }, [shown]);
